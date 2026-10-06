@@ -15,9 +15,9 @@
   ======================================================= */
 
   var SITE_LINKS = {
-    line: "",        // 例：https://lin.ee/xxxxxxx
-    facebook: "",    // 例：https://www.facebook.com/xxxxx
-    instagram: ""    // 例：https://www.instagram.com/xxxxx
+    line: "https://lin.ee/U0Ldabn",        // 例：https://lin.ee/xxxxxxx
+    lineopenchat: "https://line.me/ti/g2/Za5eT9tw1B2ZBAFnatoNIS-zmfVFUyXevY5T-g?utm_source=invitation&utm_medium=link_copy&utm_campaign=default",    // 社群
+    instagram: "https://www.instagram.com/ourspace_83?stkn=NW9xcmIxdmhsZWI="    // 例：https://www.instagram.com/xxxxx
   };
 
 
@@ -576,7 +576,7 @@
 
     var map = {
       contactLine: SITE_LINKS.line,
-      contactFacebook: SITE_LINKS.facebook,
+      contactLineChat: SITE_LINKS.lineopenchat,
       contactInstagram: SITE_LINKS.instagram
     };
 
