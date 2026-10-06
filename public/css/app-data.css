@@ -1,0 +1,614 @@
+/* =========================================================
+   OURSPACE / 窩室
+   動態資料相關樣式（接在 app.css 之後載入）
+========================================================= */
+
+
+/* =========================================================
+   01. 載入中 / 空資料 / 錯誤
+========================================================= */
+
+.data-state {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+
+  padding: 28px 24px;
+
+  color: var(--text-soft);
+  background: rgba(12, 14, 20, 0.75);
+  border: 1px dashed var(--line-bright);
+
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.data-state-icon {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  color: var(--yellow);
+  border: 1px solid var(--line-bright);
+
+  font-weight: 900;
+}
+
+.data-state-loading .data-state-icon {
+  border-radius: 50%;
+  animation: dataStateSpin 1.2s linear infinite;
+}
+
+.data-state-error {
+  border-color: rgba(255, 49, 89, 0.35);
+}
+
+.data-state-error .data-state-icon {
+  color: var(--red);
+  border-color: rgba(255, 49, 89, 0.45);
+}
+
+.tournament-list > .data-state {
+  grid-column: 1 / -1;
+}
+
+@keyframes dataStateSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+
+/* =========================================================
+   02. 照片輪播
+========================================================= */
+
+.slide-has-image {
+  position: relative;
+  overflow: hidden;
+  background: #07090f;
+}
+
+.slide-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.slide-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+
+  padding: 70px 32px 26px;
+
+  background: linear-gradient(transparent, rgba(5, 6, 10, 0.92));
+}
+
+.slide-caption-title {
+  font-size: clamp(18px, 3vw, 28px);
+  font-weight: 900;
+  letter-spacing: 2px;
+}
+
+.slide-caption-subtitle {
+  margin-top: 6px;
+
+  color: var(--yellow);
+
+  font-size: 12px;
+  letter-spacing: 2px;
+}
+
+.photo-slider.is-single .slider-button {
+  display: none;
+}
+
+.slider-dots:empty {
+  display: none;
+}
+
+
+/* =========================================================
+   03. 可點擊卡片 / 鍵盤焦點
+========================================================= */
+
+.is-clickable {
+  cursor: pointer;
+}
+
+.is-clickable:focus-visible,
+.nav-item:focus-visible,
+.primary-button:focus-visible,
+.secondary-button:focus-visible,
+.filter-button:focus-visible,
+.date-tab:focus-visible,
+.contact-button:focus-visible,
+.slider-button:focus-visible,
+.slider-dot:focus-visible,
+.modal-close:focus-visible,
+.sidebar-toggle:focus-visible {
+  outline: 2px solid var(--yellow);
+  outline-offset: 3px;
+}
+
+.secondary-button:hover {
+  color: #fff;
+  border-color: var(--line-bright);
+}
+
+
+/* =========================================================
+   04. 賽事卡片
+========================================================= */
+
+.tournament-image {
+  position: relative;
+  overflow: hidden;
+}
+
+.tournament-image img {
+  position: absolute;
+  inset: 0;
+
+  width: 100%;
+  height: 100%;
+
+  object-fit: cover;
+}
+
+.tournament-status {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2;
+
+  padding: 5px 9px;
+
+  color: var(--text-soft);
+  background: rgba(5, 6, 10, 0.85);
+  border: 1px solid var(--line-bright);
+
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1px;
+}
+
+.tournament-image span.tournament-status {
+  color: var(--text-soft);
+  font-size: 10px;
+  text-shadow: none;
+}
+
+.tournament-image span.tournament-status.status-open {
+  color: #08090d;
+  background: var(--yellow);
+  border-color: var(--yellow);
+}
+
+.tournament-image span.tournament-status.status-coming {
+  color: var(--blue);
+  border-color: rgba(0, 217, 255, 0.45);
+}
+
+.tournament-image span.tournament-status.status-ongoing {
+  color: var(--green);
+  border-color: rgba(49, 242, 139, 0.45);
+}
+
+.tournament-card.status-closed,
+.tournament-card.status-finished {
+  opacity: 0.7;
+}
+
+.tournament-desc {
+  display: -webkit-box;
+  overflow: hidden;
+
+  margin-top: 10px;
+
+  color: var(--text-soft);
+
+  font-size: 12px;
+  line-height: 1.7;
+
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.tournament-info {
+  font-size: 11px;
+}
+
+
+/* =========================================================
+   05. 戰隊聯賽：日期分頁 / 比賽狀態
+========================================================= */
+
+.league-date-tabs {
+  display: flex;
+  gap: 8px;
+
+  margin-bottom: 15px;
+  padding-bottom: 4px;
+
+  overflow-x: auto;
+}
+
+.league-date-tabs:empty {
+  display: none;
+}
+
+.date-tab {
+  flex: 0 0 auto;
+
+  min-height: 40px;
+  padding: 0 16px;
+
+  color: var(--text-soft);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+
+  cursor: pointer;
+
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 1px;
+
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.date-tab:hover {
+  color: #fff;
+  border-color: var(--line-bright);
+}
+
+.date-tab.active {
+  color: #08090d;
+  background: var(--yellow);
+  border-color: var(--yellow);
+}
+
+.match-card.live {
+  border-left: 3px solid var(--red);
+}
+
+.match-card.live .match-time small,
+.match-card.live .match-score span {
+  color: var(--red);
+}
+
+.match-card.cancelled {
+  opacity: 0.55;
+  border-left: 3px solid var(--iron);
+}
+
+.team.is-winner .team-name {
+  color: var(--yellow);
+}
+
+.team.is-winner .team-logo {
+  border-color: rgba(255, 230, 0, 0.55);
+}
+
+.team-logo,
+.rank-avatar {
+  overflow: hidden;
+}
+
+.team-logo img,
+.rank-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.match-field,
+.match-note {
+  display: block;
+
+  margin-top: 4px;
+
+  color: var(--text-dark);
+
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.match-note {
+  color: var(--text-soft);
+}
+
+
+/* =========================================================
+   06. 排行榜
+========================================================= */
+
+.rank-team {
+  margin-top: 4px;
+
+  color: var(--blue);
+
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+.rank-stats {
+  margin-top: 4px;
+
+  color: var(--text-dark);
+
+  font-size: 11px;
+}
+
+
+/* =========================================================
+   07. 聯絡按鈕（尚未設定網址）
+========================================================= */
+
+.contact-button.is-pending {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.contact-button.is-pending:hover {
+  transform: none;
+}
+
+
+/* =========================================================
+   08. 詳情視窗
+========================================================= */
+
+body.modal-open {
+  overflow: hidden;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 20px;
+}
+
+.modal[hidden] {
+  display: none;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(6px);
+}
+
+.modal-panel {
+  position: relative;
+
+  width: 100%;
+  max-width: 720px;
+  max-height: calc(100vh - 40px);
+
+  overflow-y: auto;
+
+  background: linear-gradient(135deg, #121621, #07090f);
+  border: 1px solid rgba(255, 230, 0, 0.25);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+
+  animation: modalEnter 0.22s ease both;
+}
+
+@keyframes modalEnter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+
+  width: 40px;
+  height: 40px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  color: #fff;
+  background: rgba(5, 6, 10, 0.85);
+  border: 1px solid var(--line-bright);
+
+  cursor: pointer;
+
+  font-size: 22px;
+}
+
+.modal-close:hover {
+  color: var(--yellow);
+}
+
+.modal-cover {
+  display: block;
+
+  width: 100%;
+  aspect-ratio: 16 / 7;
+
+  object-fit: cover;
+
+  border-bottom: 1px solid var(--line);
+}
+
+.modal-content {
+  padding: 32px;
+}
+
+.modal-kicker {
+  color: var(--yellow);
+
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 2px;
+}
+
+.modal-content h2 {
+  margin-top: 10px;
+  padding-right: 40px;
+
+  font-size: clamp(22px, 4vw, 32px);
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.modal-info {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+
+  margin-top: 22px;
+}
+
+.modal-info:empty {
+  display: none;
+}
+
+.modal-info-item {
+  padding: 14px 16px;
+
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+}
+
+.modal-info-item small {
+  display: block;
+
+  color: var(--text-dark);
+
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 1px;
+}
+
+.modal-info-item strong {
+  display: block;
+
+  margin-top: 6px;
+
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.modal-text {
+  max-width: 62ch;
+  margin-top: 22px;
+
+  color: var(--text-soft);
+
+  font-size: 14px;
+  line-height: 1.9;
+}
+
+.modal-text p + p {
+  margin-top: 12px;
+}
+
+.modal-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+
+  margin-top: 26px;
+  padding-top: 22px;
+
+  border-top: 1px solid var(--line);
+}
+
+.modal-action p {
+  flex: 1;
+  min-width: 200px;
+
+  color: var(--text-soft);
+
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+
+/* =========================================================
+   09. 手機
+========================================================= */
+
+@media (max-width: 760px) {
+
+  .slide-caption {
+    padding: 40px 18px 16px;
+  }
+
+  .modal {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .modal-panel {
+    max-height: 92vh;
+  }
+
+  .modal-content {
+    padding: 24px 20px 28px;
+  }
+
+  .modal-info {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-action .primary-button {
+    width: 100%;
+  }
+
+  .tournament-image span.tournament-status {
+    font-size: 10px;
+  }
+
+}
+
+
+/* =========================================================
+   10. 減少動態效果（系統設定）
+========================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+}

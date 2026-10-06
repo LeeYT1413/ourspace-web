@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#05060a">
+
+  <title>窩室後台</title>
+
+  <link rel="stylesheet" href="/admin/admin.css">
+</head>
+
+<body>
+
+  <!-- 載入中 -->
+  <div id="viewLoading" class="boot">
+    <div class="boot-mark">O</div>
+  </div>
+
+
+  <!-- 登入 -->
+  <section id="viewLogin" class="auth" hidden>
+
+    <form id="loginForm" class="auth-card" novalidate>
+
+      <div class="auth-brand">
+        <div class="brand-mark">O</div>
+        <div>
+          <div class="brand-main">OURSPACE</div>
+          <div class="brand-sub">窩室後台</div>
+        </div>
+      </div>
+
+      <label class="field">
+        <span class="field-label">帳號</span>
+        <input name="username" type="text" autocomplete="username" required>
+      </label>
+
+      <label class="field">
+        <span class="field-label">密碼</span>
+        <input name="password" type="password" autocomplete="current-password" required>
+      </label>
+
+      <p class="form-error" role="alert" hidden></p>
+
+      <button class="btn btn-primary btn-block" type="submit">登入</button>
+
+    </form>
+
+  </section>
+
+
+  <!-- 第一次使用：建立管理員 -->
+  <section id="viewSetup" class="auth" hidden>
+
+    <form id="setupForm" class="auth-card" novalidate>
+
+      <div class="auth-brand">
+        <div class="brand-mark">O</div>
+        <div>
+          <div class="brand-main">OURSPACE</div>
+          <div class="brand-sub">建立第一個管理員</div>
+        </div>
+      </div>
+
+      <p class="auth-note">
+        後台還沒有任何帳號。請輸入部署時設定的 SETUP_KEY，建立第一個管理員帳號。
+      </p>
+
+      <label class="field">
+        <span class="field-label">SETUP_KEY</span>
+        <input name="setup_key" type="password" autocomplete="off" required>
+      </label>
+
+      <label class="field">
+        <span class="field-label">顯示名稱</span>
+        <input name="display_name" type="text" maxlength="50" required>
+      </label>
+
+      <label class="field">
+        <span class="field-label">帳號</span>
+        <input name="username" type="text" autocomplete="username" required>
+        <span class="field-help">3–32 個英文字母、數字或 _ . -</span>
+      </label>
+
+      <label class="field">
+        <span class="field-label">密碼</span>
+        <input name="password" type="password" autocomplete="new-password" required>
+        <span class="field-help">至少 8 個字元</span>
+      </label>
+
+      <label class="field">
+        <span class="field-label">再輸入一次密碼</span>
+        <input name="password_confirm" type="password" autocomplete="new-password" required>
+      </label>
+
+      <p class="form-error" role="alert" hidden></p>
+
+      <button class="btn btn-primary btn-block" type="submit">建立管理員</button>
+
+    </form>
+
+  </section>
+
+
+  <!-- 主畫面 -->
+  <div id="viewMain" class="shell" hidden>
+
+    <header class="topbar">
+
+      <div class="topbar-brand">
+        <div class="brand-mark brand-mark-small">O</div>
+        <span>窩室後台</span>
+      </div>
+
+      <div class="topbar-user">
+        <span id="userName" class="user-name"></span>
+        <span id="userRole" class="user-role"></span>
+        <a class="btn btn-ghost btn-small" href="/" target="_blank" rel="noopener">官網</a>
+        <button id="logoutButton" class="btn btn-ghost btn-small" type="button">登出</button>
+      </div>
+
+    </header>
+
+    <nav id="adminNav" class="tabs" aria-label="後台選單"></nav>
+
+    <main id="adminMain" class="main"></main>
+
+  </div>
+
+
+  <!-- 編輯表單 -->
+  <div id="formPanel" class="panel" hidden>
+
+    <div class="panel-backdrop" data-panel-close></div>
+
+    <form id="recordForm" class="panel-sheet" novalidate>
+
+      <div class="panel-head">
+        <h2 id="formTitle">編輯</h2>
+        <button class="icon-button" type="button" data-panel-close aria-label="關閉">×</button>
+      </div>
+
+      <div id="formFields" class="panel-body"></div>
+
+      <p class="form-error panel-error" role="alert" hidden></p>
+
+      <div class="panel-foot">
+        <button id="deleteButton" class="btn btn-danger" type="button" hidden>刪除</button>
+        <span class="panel-foot-space"></span>
+        <button class="btn btn-ghost" type="button" data-panel-close>取消</button>
+        <button id="saveButton" class="btn btn-primary" type="submit">儲存</button>
+      </div>
+
+    </form>
+
+  </div>
+
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+
+  <script src="/admin/admin.js"></script>
+
+</body>
+</html>
