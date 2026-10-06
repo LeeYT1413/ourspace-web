@@ -1,8 +1,7 @@
-
 /* =========================================================
    OURSPACE / 窩室
    Main Application JavaScript
-   Frontend Controller
+   Frontend Controller（串接 Cloudflare D1 API）
    不使用 Template Literal
 ========================================================= */
 
@@ -12,1868 +11,1962 @@
 
 
   /* =======================================================
-     01. DOM
+     00. 網站設定（請填入實際網址）
   ======================================================= */
 
-  var body = document.body;
-
-  var sidebar = document.getElementById("sidebar");
-
-  var sidebarToggle = document.getElementById("sidebarToggle");
-
-  var mobileMenuButton = document.getElementById("mobileMenuButton");
-
-  var mobileOverlay = document.getElementById("mobileOverlay");
-
-  var navItems = document.querySelectorAll(".nav-item");
-
-  var pages = document.querySelectorAll(".page");
-
-
-  /* =======================================================
-     02. PAGE DATA
-  ======================================================= */
-
-  var pageTitles = {
-    dashboard: "最新消息",
-    league: "戰隊聯賽",
-    ranking: "陀螺爭霸",
-    tournaments: "賽事報名"
+  var SITE_LINKS = {
+    line: "https://lin.ee/U0Ldabn",        // 例：https://lin.ee/xxxxxxx
+    LineOpenChat: "https://line.me/ti/g2/Za5eT9tw1B2ZBAFnatoNIS-zmfVFUyXevY5T-g?utm_source=invitation&utm_medium=link_copy&utm_campaign=default",    // 例：https://www.facebook.com/xxxxx
+    instagram: "https://www.instagram.com/ourspace_83?stkn=NW9xcmIxdmhsZWI="    // 例：https://www.instagram.com/xxxxx
   };
 
 
   /* =======================================================
-     03. SIDEBAR
+     01. 常數
+  ======================================================= */
+
+  var DEFAULT_PAGE = "news";
+
+  var PAGES = {
+    news: { title: "最新消息", subtitle: "OURSPACE NEWS" },
+    league: { title: "戰隊聯賽", subtitle: "TEAM BATTLE LEAGUE" },
+    ranking: { title: "陀螺爭霸", subtitle: "TOP SPINNERS" },
+    tournaments: { title: "賽事報名", subtitle: "JOIN THE BATTLE" }
+  };
+
+  var TOURNAMENT_TYPES = {
+    team: { name: "戰隊賽", tag: "TEAM BATTLE", icon: "⚔" },
+    solo: { name: "個人賽", tag: "SOLO BATTLE", icon: "◈" }
+  };
+
+  var TOURNAMENT_STATUSES = {
+    open: { name: "報名中", tag: "OPEN" },
+    coming: { name: "即將開放", tag: "COMING SOON" },
+    ongoing: { name: "進行中", tag: "LIVE" },
+    closed: { name: "報名截止", tag: "CLOSED" },
+    finished: { name: "已結束", tag: "FINISHED" }
+  };
+
+  var MATCH_STATUSES = {
+    scheduled: { name: "未開賽", tag: "UPCOMING", css: "upcoming" },
+    live: { name: "比賽中", tag: "LIVE", css: "live" },
+    finished: { name: "比賽結束", tag: "FINISHED", css: "finished" },
+    cancelled: { name: "已取消", tag: "CANCELLED", css: "cancelled" }
+  };
+
+  var RANK_TIERS = [
+    { css: "rank-1", label: "CHAMPION", badge: "GOLD" },
+    { css: "rank-2", label: "RUNNER UP", badge: "SILVER" },
+    { css: "rank-3", label: "TOP 3", badge: "BRONZE" }
+  ];
+
+  var MONTHS = [
+    "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+    "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"
+  ];
+
+  var WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
+
+
+  /* =======================================================
+     02. 共用工具
+  ======================================================= */
+
+  function byId(id) {
+    return document.getElementById(id);
+  }
+
+
+  /* 建立元素；文字一律用 textContent，避免資料庫內容被當成 HTML */
+  function el(tag, className, text) {
+
+    var node = document.createElement(tag);
+
+    if (className) {
+      node.className = className;
+    }
+
+    if (text !== undefined && text !== null) {
+      node.textContent = String(text);
+    }
+
+    return node;
+  }
+
+
+  function clear(node) {
+
+    if (!node) {
+      return;
+    }
+
+    while (node.firstChild) {
+      node.removeChild(node.firstChild);
+    }
+  }
+
+
+  function pad2(value) {
+
+    var text = String(value);
+
+    return text.length < 2 ? "0" + text : text;
+  }
+
+
+  function cssToken(value) {
+
+    return String(value || "unknown")
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, "");
+  }
+
+
+  function initialOf(name) {
+
+    var text = String(name || "").trim();
+
+    if (!text) {
+      return "?";
+    }
+
+    return Array.from(text)[0].toUpperCase();
+  }
+
+
+  /* 只允許 http(s) 或站內路徑，擋掉 javascript: 之類的網址 */
+  function safeUrl(value) {
+
+    if (!value) {
+      return "";
+    }
+
+    var text = String(value).trim();
+
+    if (/^https?:\/\//i.test(text)) {
+      return text;
+    }
+
+    if (
+      (text.charAt(0) === "/" && text.indexOf("//") !== 0) ||
+      text.charAt(0) === "#"
+    ) {
+      return text;
+    }
+
+    return "";
+  }
+
+
+  function isExternal(url) {
+    return /^https?:\/\//i.test(url);
+  }
+
+
+  function formatMoney(value) {
+
+    var number = Number(value) || 0;
+
+    if (number <= 0) {
+      return "免費";
+    }
+
+    return "NT$ " + number.toLocaleString("zh-TW");
+  }
+
+
+  /* 文字依換行切成段落 */
+  function appendParagraphs(container, text) {
+
+    String(text || "")
+      .split(/\n+/)
+      .forEach(function (line) {
+
+        line = line.trim();
+
+        if (line) {
+          container.appendChild(el("p", null, line));
+        }
+      });
+  }
+
+
+  function bindActivate(node, handler) {
+
+    node.addEventListener("click", handler);
+
+    node.addEventListener("keydown", function (event) {
+
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        handler();
+      }
+    });
+  }
+
+
+  /* =======================================================
+     03. 日期
+     資料庫時間假設為台灣時間字串：YYYY-MM-DD HH:MM(:SS)
+     直接解析字串，不做時區換算
+  ======================================================= */
+
+  function parseDateTime(value) {
+
+    if (!value) {
+      return null;
+    }
+
+    var match = String(value).match(
+      /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2}))?/
+    );
+
+    if (!match) {
+      return null;
+    }
+
+    return {
+      year: Number(match[1]),
+      month: Number(match[2]),
+      day: Number(match[3]),
+      hour: match[4] !== undefined ? Number(match[4]) : null,
+      minute: match[5] !== undefined ? Number(match[5]) : null,
+      key: match[1] + "-" + pad2(match[2]) + "-" + pad2(match[3])
+    };
+  }
+
+
+  function todayKey() {
+
+    var now = new Date();
+
+    return (
+      now.getFullYear() + "-" +
+      pad2(now.getMonth() + 1) + "-" +
+      pad2(now.getDate())
+    );
+  }
+
+
+  function weekdayOf(parts) {
+
+    var date = new Date(parts.year, parts.month - 1, parts.day);
+
+    return WEEKDAYS[date.getDay()];
+  }
+
+
+  function formatDate(parts) {
+
+    if (!parts) {
+      return "即將公布";
+    }
+
+    return parts.year + " / " + pad2(parts.month) + " / " + pad2(parts.day);
+  }
+
+
+  function formatTime(parts) {
+
+    if (!parts || parts.hour === null) {
+      return "";
+    }
+
+    return pad2(parts.hour) + ":" + pad2(parts.minute);
+  }
+
+
+  function formatDateTime(value) {
+
+    var parts = parseDateTime(value);
+
+    if (!parts) {
+      return "即將公布";
+    }
+
+    var time = formatTime(parts);
+
+    return (
+      formatDate(parts) +
+      "（" + weekdayOf(parts) + "）" +
+      (time ? " " + time : "")
+    );
+  }
+
+
+  /* =======================================================
+     04. API
+  ======================================================= */
+
+  function apiGet(path) {
+
+    return fetch(path, {
+      headers: { "Accept": "application/json" }
+    })
+      .then(function (response) {
+
+        return response
+          .json()
+          .catch(function () {
+            return null;
+          })
+          .then(function (data) {
+
+            if (!response.ok || !data || !data.success) {
+              throw new Error(
+                (data && data.error) || ("HTTP_" + response.status)
+              );
+            }
+
+            return data;
+          });
+      });
+  }
+
+
+  /* 載入中 / 空資料 / 錯誤 */
+  function renderState(container, type, message) {
+
+    if (!container) {
+      return;
+    }
+
+    clear(container);
+
+    var box = el("div", "data-state data-state-" + type);
+
+    var icon = "—";
+
+    if (type === "loading") {
+      icon = "◌";
+    }
+
+    if (type === "error") {
+      icon = "!";
+    }
+
+    box.appendChild(el("span", "data-state-icon", icon));
+    box.appendChild(el("p", null, message));
+
+    container.appendChild(box);
+  }
+
+
+  /* =======================================================
+     05. DOM
+  ======================================================= */
+
+  var body = document.body;
+
+  var sidebar = byId("sidebar");
+  var sidebarToggle = byId("sidebarToggle");
+  var mobileMenuButton = byId("mobileMenuButton");
+  var mobileOverlay = byId("mobileOverlay");
+
+  var navItems = document.querySelectorAll(".nav-item");
+  var pages = document.querySelectorAll(".page");
+
+  var topbarTitle = byId("topbarTitle");
+  var topbarSubtitle = byId("topbarSubtitle");
+
+
+  /* =======================================================
+     06. SIDEBAR
   ======================================================= */
 
   function toggleSidebar() {
 
-    if (!body) {
-      return;
-    }
-
     body.classList.toggle("sidebar-collapsed");
 
-    saveSidebarState();
-
-  }
-
-
-  function saveSidebarState() {
-
     try {
-
-      var collapsed =
-        body.classList.contains("sidebar-collapsed");
-
       localStorage.setItem(
         "ourspace_sidebar_collapsed",
-        collapsed ? "1" : "0"
+        body.classList.contains("sidebar-collapsed") ? "1" : "0"
       );
-
     } catch (error) {
-
-      console.log(
-        "無法儲存 Sidebar 狀態",
-        error
-      );
-
+      /* 無痕模式等情況無法儲存，忽略 */
     }
-
   }
 
 
   function loadSidebarState() {
 
     try {
-
-      var state =
-        localStorage.getItem(
-          "ourspace_sidebar_collapsed"
-        );
-
-      if (state === "1") {
-
-        body.classList.add(
-          "sidebar-collapsed"
-        );
-
+      if (localStorage.getItem("ourspace_sidebar_collapsed") === "1") {
+        body.classList.add("sidebar-collapsed");
       }
-
     } catch (error) {
-
-      console.log(
-        "無法讀取 Sidebar 狀態",
-        error
-      );
-
+      /* 忽略 */
     }
-
   }
 
-
-  if (sidebarToggle) {
-
-    sidebarToggle.addEventListener(
-      "click",
-      function () {
-
-        if (window.innerWidth <= 760) {
-
-          closeMobileSidebar();
-
-          return;
-
-        }
-
-        toggleSidebar();
-
-      }
-    );
-
-  }
-
-
-  /* =======================================================
-     04. MOBILE SIDEBAR
-  ======================================================= */
 
   function openMobileSidebar() {
 
-    if (!sidebar) {
-      return;
+    if (sidebar) {
+      sidebar.classList.add("mobile-open");
     }
-
-    sidebar.classList.add(
-      "mobile-open"
-    );
 
     if (mobileOverlay) {
-
-      mobileOverlay.classList.add(
-        "active"
-      );
-
+      mobileOverlay.classList.add("active");
     }
 
-    body.classList.add(
-      "mobile-menu-open"
-    );
-
+    body.classList.add("mobile-menu-open");
   }
 
 
   function closeMobileSidebar() {
 
     if (sidebar) {
-
-      sidebar.classList.remove(
-        "mobile-open"
-      );
-
+      sidebar.classList.remove("mobile-open");
     }
 
     if (mobileOverlay) {
-
-      mobileOverlay.classList.remove(
-        "active"
-      );
-
+      mobileOverlay.classList.remove("active");
     }
 
-    body.classList.remove(
-      "mobile-menu-open"
-    );
+    body.classList.remove("mobile-menu-open");
+  }
 
+
+  if (sidebarToggle) {
+
+    sidebarToggle.addEventListener("click", function () {
+
+      if (window.innerWidth <= 760) {
+        closeMobileSidebar();
+        return;
+      }
+
+      toggleSidebar();
+    });
   }
 
 
   if (mobileMenuButton) {
 
-    mobileMenuButton.addEventListener(
-      "click",
-      function () {
+    mobileMenuButton.addEventListener("click", function () {
 
-        if (
-          sidebar &&
-          sidebar.classList.contains(
-            "mobile-open"
-          )
-        ) {
-
-          closeMobileSidebar();
-
-        } else {
-
-          openMobileSidebar();
-
-        }
-
+      if (sidebar && sidebar.classList.contains("mobile-open")) {
+        closeMobileSidebar();
+      } else {
+        openMobileSidebar();
       }
-    );
-
+    });
   }
 
 
   if (mobileOverlay) {
-
-    mobileOverlay.addEventListener(
-      "click",
-      function () {
-
-        closeMobileSidebar();
-
-      }
-    );
-
+    mobileOverlay.addEventListener("click", closeMobileSidebar);
   }
+
+
+  window.addEventListener("resize", function () {
+
+    if (window.innerWidth > 760) {
+      closeMobileSidebar();
+    }
+  });
 
 
   /* =======================================================
-     05. PAGE NAVIGATION
+     07. 換頁（使用網址 #news / #league / #ranking / #tournaments）
+     好處：可以直接分享某一頁的連結，瀏覽器上一頁也能用
   ======================================================= */
 
-  function switchPage(pageName) {
+  function getPageFromHash() {
 
-    if (!pageName) {
-      return;
+    var name = (window.location.hash || "").replace("#", "");
+
+    return PAGES[name] ? name : DEFAULT_PAGE;
+  }
+
+
+  function showPage(pageName) {
+
+    if (!PAGES[pageName]) {
+      pageName = DEFAULT_PAGE;
     }
-
-
-    var targetPage =
-      document.getElementById(
-        "page-" + pageName
-      );
-
-
-    if (!targetPage) {
-
-      console.warn(
-        "找不到頁面：",
-        pageName
-      );
-
-      return;
-
-    }
-
-
-    /* Hide all pages */
 
     pages.forEach(function (page) {
-
-      page.classList.remove(
-        "active"
+      page.classList.toggle(
+        "active",
+        page.id === "page-" + pageName
       );
-
     });
-
-
-    /* Show target */
-
-    targetPage.classList.add(
-      "active"
-    );
-
-
-    /* Update nav */
 
     navItems.forEach(function (item) {
 
-      var itemPage =
-        item.getAttribute(
-          "data-page"
-        );
+      var isActive = item.getAttribute("data-page") === pageName;
 
-      if (itemPage === pageName) {
+      item.classList.toggle("active", isActive);
 
-        item.classList.add(
-          "active"
-        );
-
+      if (isActive) {
+        item.setAttribute("aria-current", "page");
       } else {
-
-        item.classList.remove(
-          "active"
-        );
-
+        item.removeAttribute("aria-current");
       }
-
     });
 
+    if (topbarTitle) {
+      topbarTitle.textContent = PAGES[pageName].title;
+    }
 
-    /* Update title */
+    if (topbarSubtitle) {
+      topbarSubtitle.textContent = PAGES[pageName].subtitle;
+    }
 
-    updatePageTitle(
-      pageName
-    );
-
-
-    /* Close mobile menu */
+    document.title = PAGES[pageName].title + "｜OurSpace 窩室";
 
     closeMobileSidebar();
 
-
-    /* Scroll to top */
-
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth"
-    });
-
-
-    /* Save current page */
-
-    try {
-
-      localStorage.setItem(
-        "ourspace_current_page",
-        pageName
-      );
-
-    } catch (error) {
-
-      console.log(
-        "無法儲存目前頁面",
-        error
-      );
-
-    }
-
+    window.scrollTo(0, 0);
   }
 
 
-  function updatePageTitle(pageName) {
+  function goToPage(pageName) {
 
-    var title =
-      document.getElementById(
-        "pageTitle"
-      );
-
-    var subtitle =
-      document.getElementById(
-        "pageSubtitle"
-      );
-
-
-    if (title) {
-
-      if (
-        pageTitles[pageName]
-      ) {
-
-        title.textContent =
-          pageTitles[pageName];
-
-      } else {
-
-        title.textContent =
-          "窩室 OurSpace";
-
-      }
-
+    if (window.location.hash === "#" + pageName) {
+      showPage(pageName);
+    } else {
+      window.location.hash = pageName;
     }
-
-
-    if (subtitle) {
-
-      subtitle.textContent =
-        "OURSPACE BATTLE ARENA";
-
-    }
-
   }
+
+
+  window.addEventListener("hashchange", function () {
+
+    var page = getPageFromHash();
+
+    showPage(page);
+
+    /* 切到聯賽頁時立即抓最新比分 */
+    if (page === "league" && typeof loadLeague === "function") {
+      loadLeague(true);
+    }
+  });
 
 
   navItems.forEach(function (item) {
 
-    item.addEventListener(
-      "click",
-      function () {
-
-        var page =
-          item.getAttribute(
-            "data-page"
-          );
-
-        if (page) {
-
-          switchPage(page);
-
-        }
-
-      }
-    );
-
+    item.addEventListener("click", function () {
+      goToPage(item.getAttribute("data-page"));
+    });
   });
 
 
-  /* =======================================================
-     06. BUTTON PAGE LINKS
-  ======================================================= */
+  /* 任何帶 data-page-link 的元素都可以換頁 */
+  document.addEventListener("click", function (event) {
 
-  var pageLinks =
-    document.querySelectorAll(
-      "[data-go-page]"
-    );
+    var target = event.target.closest
+      ? event.target.closest("[data-page-link]")
+      : null;
 
-
-  pageLinks.forEach(function (element) {
-
-    element.addEventListener(
-      "click",
-      function () {
-
-        var page =
-          element.getAttribute(
-            "data-go-page"
-          );
-
-        if (page) {
-
-          switchPage(page);
-
-        }
-
-      }
-    );
-
-  });
-
-
-  /* =======================================================
-     07. LOAD CURRENT PAGE
-  ======================================================= */
-
-  function loadCurrentPage() {
-
-    var defaultPage =
-      "dashboard";
-
-    var currentPage =
-      defaultPage;
-
-
-    try {
-
-      var savedPage =
-        localStorage.getItem(
-          "ourspace_current_page"
-        );
-
-      if (
-        savedPage &&
-        document.getElementById(
-          "page-" + savedPage
-        )
-      ) {
-
-        currentPage =
-          savedPage;
-
-      }
-
-    } catch (error) {
-
-      console.log(
-        "無法讀取目前頁面",
-        error
-      );
-
+    if (target) {
+      goToPage(target.getAttribute("data-page-link"));
     }
+  });
 
 
-    switchPage(
-      currentPage
-    );
+  /* =======================================================
+     08. 聯絡連結 / Footer
+  ======================================================= */
 
+  function applySiteLinks() {
+
+    var map = {
+      contactLine: SITE_LINKS.line,
+      contactFacebook: SITE_LINKS.LineOpenChat,
+      contactInstagram: SITE_LINKS.instagram
+    };
+
+    Object.keys(map).forEach(function (id) {
+
+      var link = byId(id);
+      var url = safeUrl(map[id]);
+
+      if (!link) {
+        return;
+      }
+
+      if (url) {
+        link.href = url;
+        link.target = "_blank";
+        link.rel = "noopener";
+      } else {
+        link.classList.add("is-pending");
+        link.setAttribute("aria-disabled", "true");
+        link.addEventListener("click", function (event) {
+          event.preventDefault();
+        });
+      }
+    });
+
+    var year = byId("footerYear");
+
+    if (year) {
+      year.textContent = String(new Date().getFullYear());
+    }
   }
 
 
   /* =======================================================
-     08. PHOTO SLIDER
+     09. 詳情視窗
   ======================================================= */
 
-  var currentSlide =
-    0;
+  var modal = byId("detailModal");
+  var modalBody = byId("modalBody");
+  var modalCloseButton = byId("modalCloseButton");
+  var lastFocused = null;
 
-  var slideTimer =
-    null;
+
+  function openModal(content) {
+
+    if (!modal || !modalBody) {
+      return;
+    }
+
+    lastFocused = document.activeElement;
+
+    clear(modalBody);
+    modalBody.appendChild(content);
+
+    modal.hidden = false;
+    body.classList.add("modal-open");
+
+    if (modalCloseButton) {
+      modalCloseButton.focus();
+    }
+  }
+
+
+  function closeModal() {
+
+    if (!modal || modal.hidden) {
+      return;
+    }
+
+    modal.hidden = true;
+    body.classList.remove("modal-open");
+
+    if (lastFocused && lastFocused.focus) {
+      lastFocused.focus();
+    }
+  }
+
+
+  if (modal) {
+
+    modal.addEventListener("click", function (event) {
+
+      if (
+        event.target.closest &&
+        event.target.closest("[data-modal-close]")
+      ) {
+        closeModal();
+      }
+    });
+  }
+
+
+  document.addEventListener("keydown", function (event) {
+
+    if (event.key === "Escape") {
+      closeModal();
+    }
+  });
+
+
+  function createModalInfo(items) {
+
+    var grid = el("div", "modal-info");
+
+    items.forEach(function (item) {
+
+      if (!item.value) {
+        return;
+      }
+
+      var box = el("div", "modal-info-item");
+
+      box.appendChild(el("small", null, item.label));
+      box.appendChild(el("strong", null, item.value));
+
+      grid.appendChild(box);
+    });
+
+    return grid;
+  }
+
+
+  /* =======================================================
+     10. 照片輪播
+  ======================================================= */
+
+  var photoSlider = byId("photoSlider");
+  var sliderTrack = byId("sliderTrack");
+  var sliderDots = byId("sliderDots");
+
+  var currentSlide = 0;
+  var slideTimer = null;
 
 
   function getSlides() {
-
-    return document.querySelectorAll(
-      ".slide"
-    );
-
-  }
-
-
-  function getSliderDots() {
-
-    return document.querySelectorAll(
-      ".slider-dot"
-    );
-
+    return sliderTrack ? sliderTrack.querySelectorAll(".slide") : [];
   }
 
 
   function showSlide(index) {
 
-    var slides =
-      getSlides();
+    var slides = getSlides();
 
-    var dots =
-      getSliderDots();
-
-
-    if (
-      !slides ||
-      slides.length === 0
-    ) {
-
+    if (!slides.length) {
       return;
-
     }
 
-
-    if (
-      index >= slides.length
-    ) {
-
+    if (index >= slides.length) {
       index = 0;
-
     }
 
-
-    if (
-      index < 0
-    ) {
-
-      index =
-        slides.length - 1;
-
+    if (index < 0) {
+      index = slides.length - 1;
     }
 
+    currentSlide = index;
 
-    currentSlide =
-      index;
+    slides.forEach(function (slide, i) {
+      slide.classList.toggle("active", i === index);
+    });
 
-
-    slides.forEach(
-      function (slide, slideIndex) {
-
-        if (
-          slideIndex === currentSlide
-        ) {
-
-          slide.classList.add(
-            "active"
-          );
-
-        } else {
-
-          slide.classList.remove(
-            "active"
-          );
-
-        }
-
-      }
-    );
-
-
-    dots.forEach(
-      function (dot, dotIndex) {
-
-        if (
-          dotIndex === currentSlide
-        ) {
-
-          dot.classList.add(
-            "active"
-          );
-
-        } else {
-
-          dot.classList.remove(
-            "active"
-          );
-
-        }
-
-      }
-    );
-
-  }
-
-
-  function nextSlide() {
-
-    showSlide(
-      currentSlide + 1
-    );
-
-    restartSlider();
-
-  }
-
-
-  function previousSlide() {
-
-    showSlide(
-      currentSlide - 1
-    );
-
-    restartSlider();
-
-  }
-
-
-  function startSlider() {
-
-    var slides =
-      getSlides();
-
-
-    if (
-      !slides ||
-      slides.length <= 1
-    ) {
-
-      return;
-
+    if (sliderDots) {
+      sliderDots.querySelectorAll(".slider-dot").forEach(function (dot, i) {
+        dot.classList.toggle("active", i === index);
+      });
     }
-
-
-    stopSlider();
-
-
-    slideTimer =
-      setInterval(
-        function () {
-
-          showSlide(
-            currentSlide + 1
-          );
-
-        },
-        5000
-      );
-
   }
 
 
   function stopSlider() {
 
     if (slideTimer) {
-
-      clearInterval(
-        slideTimer
-      );
-
-      slideTimer =
-        null;
-
+      clearInterval(slideTimer);
+      slideTimer = null;
     }
-
   }
 
 
-  function restartSlider() {
+  function startSlider() {
 
     stopSlider();
 
+    if (getSlides().length <= 1) {
+      return;
+    }
+
+    slideTimer = setInterval(function () {
+      showSlide(currentSlide + 1);
+    }, 5000);
+  }
+
+
+  function buildSliderDots() {
+
+    if (!sliderDots) {
+      return;
+    }
+
+    clear(sliderDots);
+
+    var count = getSlides().length;
+
+    if (photoSlider) {
+      photoSlider.classList.toggle("is-single", count <= 1);
+    }
+
+    if (count <= 1) {
+      return;
+    }
+
+    for (var i = 0; i < count; i++) {
+
+      (function (index) {
+
+        var dot = el("button", "slider-dot");
+
+        dot.type = "button";
+        dot.setAttribute("aria-label", "第 " + (index + 1) + " 張");
+
+        dot.addEventListener("click", function () {
+          showSlide(index);
+          startSlider();
+        });
+
+        sliderDots.appendChild(dot);
+
+      })(i);
+    }
+  }
+
+
+  function createImageSlide(item, index) {
+
+    var link = safeUrl(item.link_url);
+    var slide = el(link ? "a" : "div", "slide slide-has-image");
+
+    if (link) {
+
+      slide.href = link;
+
+      if (isExternal(link)) {
+        slide.target = "_blank";
+        slide.rel = "noopener";
+      }
+    }
+
+    var image = el("img", "slide-image");
+
+    image.src = safeUrl(item.image_url);
+    image.alt = item.title || "窩室賽事現場";
+    image.decoding = "async";
+
+    if (index > 0) {
+      image.loading = "lazy";
+    }
+
+    slide.appendChild(image);
+
+    if (item.title || item.subtitle) {
+
+      var caption = el("div", "slide-caption");
+
+      if (item.title) {
+        caption.appendChild(el("div", "slide-caption-title", item.title));
+      }
+
+      if (item.subtitle) {
+        caption.appendChild(el("div", "slide-caption-subtitle", item.subtitle));
+      }
+
+      slide.appendChild(caption);
+    }
+
+    return slide;
+  }
+
+
+  function initSliderControls() {
+
+    var prev = byId("sliderPrev");
+    var next = byId("sliderNext");
+
+    if (prev) {
+      prev.addEventListener("click", function () {
+        showSlide(currentSlide - 1);
+        startSlider();
+      });
+    }
+
+    if (next) {
+      next.addEventListener("click", function () {
+        showSlide(currentSlide + 1);
+        startSlider();
+      });
+    }
+
+    if (!photoSlider) {
+      return;
+    }
+
+    photoSlider.addEventListener("mouseenter", stopSlider);
+    photoSlider.addEventListener("mouseleave", startSlider);
+
+
+    /* 手機左右滑動 */
+    var touchStartX = 0;
+
+    photoSlider.addEventListener("touchstart", function (event) {
+
+      if (event.touches && event.touches.length) {
+        touchStartX = event.touches[0].clientX;
+      }
+
+    }, { passive: true });
+
+    photoSlider.addEventListener("touchend", function (event) {
+
+      if (!event.changedTouches || !event.changedTouches.length) {
+        return;
+      }
+
+      var distance = event.changedTouches[0].clientX - touchStartX;
+
+      if (Math.abs(distance) < 50) {
+        return;
+      }
+
+      showSlide(distance < 0 ? currentSlide + 1 : currentSlide - 1);
+      startSlider();
+
+    }, { passive: true });
+
+
+    /* 分頁切到背景時暫停 */
+    document.addEventListener("visibilitychange", function () {
+
+      if (document.hidden) {
+        stopSlider();
+      } else {
+        startSlider();
+      }
+    });
+  }
+
+
+  function loadSlider() {
+
+    buildSliderDots();
+    showSlide(0);
     startSlider();
 
-  }
+    return apiGet("/api/news/images")
+      .then(function (response) {
 
+        var images = (response.data || []).filter(function (item) {
+          return safeUrl(item.image_url);
+        });
 
-  var nextButton =
-    document.getElementById(
-      "sliderNext"
-    );
-
-
-  var previousButton =
-    document.getElementById(
-      "sliderPrev"
-    );
-
-
-  if (nextButton) {
-
-    nextButton.addEventListener(
-      "click",
-      nextSlide
-    );
-
-  }
-
-
-  if (previousButton) {
-
-    previousButton.addEventListener(
-      "click",
-      previousSlide
-    );
-
-  }
-
-
-  var dots =
-    document.querySelectorAll(
-      ".slider-dot"
-    );
-
-
-  dots.forEach(
-    function (dot, index) {
-
-      dot.addEventListener(
-        "click",
-        function () {
-
-          showSlide(
-            index
-          );
-
-          restartSlider();
-
+        /* 沒有照片就保留預設畫面 */
+        if (!images.length) {
+          return;
         }
-      );
 
-    }
-  );
+        clear(sliderTrack);
 
+        images.forEach(function (item, index) {
+          sliderTrack.appendChild(createImageSlide(item, index));
+        });
 
-  var slider =
-    document.querySelector(
-      ".photo-slider"
-    );
-
-
-  if (slider) {
-
-    slider.addEventListener(
-      "mouseenter",
-      stopSlider
-    );
-
-
-    slider.addEventListener(
-      "mouseleave",
-      startSlider
-    );
-
+        buildSliderDots();
+        showSlide(0);
+        startSlider();
+      })
+      .catch(function (error) {
+        console.warn("輪播照片載入失敗，使用預設畫面", error);
+      });
   }
 
 
   /* =======================================================
-     09. TOUCH SWIPE
+     11. 最新公告
   ======================================================= */
 
-  var touchStartX =
-    0;
-
-  var touchEndX =
-    0;
+  var newsList = byId("newsList");
 
 
-  if (slider) {
+  function createNewsCard(item) {
 
-    slider.addEventListener(
-      "touchstart",
-      function (event) {
+    var card = el("article", "news-card is-clickable");
 
-        if (
-          event.touches &&
-          event.touches.length > 0
-        ) {
+    card.tabIndex = 0;
+    card.setAttribute("role", "button");
 
-          touchStartX =
-            event.touches[0].clientX;
+    var parts = parseDateTime(item.published_at);
 
-        }
+    var date = el("div", "news-date");
+    date.appendChild(el("span", null, parts ? pad2(parts.day) : "--"));
+    date.appendChild(el("small", null, parts ? MONTHS[parts.month - 1] : "NEW"));
 
-      },
-      {
-        passive: true
-      }
+    var content = el("div", "news-body");
+    content.appendChild(
+      el("div", "news-tag", String(item.category || "news").toUpperCase())
     );
+    content.appendChild(el("h3", null, item.title));
 
+    if (item.summary) {
+      content.appendChild(el("p", null, item.summary));
+    }
 
-    slider.addEventListener(
-      "touchend",
-      function (event) {
+    card.appendChild(date);
+    card.appendChild(content);
+    card.appendChild(el("div", "news-arrow", "→"));
 
-        if (
-          event.changedTouches &&
-          event.changedTouches.length > 0
-        ) {
+    bindActivate(card, function () {
+      openNewsModal(item);
+    });
 
-          touchEndX =
-            event.changedTouches[0].clientX;
-
-          handleSwipe();
-
-        }
-
-      },
-      {
-        passive: true
-      }
-    );
-
+    return card;
   }
 
 
-  function handleSwipe() {
+  function openNewsModal(item) {
 
-    var distance =
-      touchEndX - touchStartX;
+    var wrapper = el("div");
 
+    var cover = safeUrl(item.cover_image_url);
 
-    if (
-      Math.abs(distance) < 50
-    ) {
-
-      return;
-
+    if (cover) {
+      var image = el("img", "modal-cover");
+      image.src = cover;
+      image.alt = item.title || "";
+      wrapper.appendChild(image);
     }
 
+    var content = el("div", "modal-content");
 
-    if (
-      distance < 0
-    ) {
+    var kicker =
+      String(item.category || "news").toUpperCase() +
+      " / " +
+      formatDate(parseDateTime(item.published_at));
 
-      nextSlide();
+    content.appendChild(el("div", "modal-kicker", kicker));
 
-    } else {
+    var title = el("h2", null, item.title);
+    title.id = "modalTitle";
+    content.appendChild(title);
 
-      previousSlide();
+    var text = el("div", "modal-text");
+    appendParagraphs(text, item.content || item.summary || "");
+    content.appendChild(text);
 
-    }
+    wrapper.appendChild(content);
 
+    openModal(wrapper);
+  }
+
+
+  function loadNews() {
+
+    renderState(newsList, "loading", "公告載入中…");
+
+    return apiGet("/api/news")
+      .then(function (response) {
+
+        var items = response.data || [];
+
+        if (!items.length) {
+          renderState(newsList, "empty", "目前沒有公告，新消息會第一時間公布在這裡。");
+          return;
+        }
+
+        clear(newsList);
+
+        items.slice(0, 10).forEach(function (item) {
+          newsList.appendChild(createNewsCard(item));
+        });
+      })
+      .catch(function (error) {
+        console.error("公告載入失敗", error);
+        renderState(newsList, "error", "公告載入失敗，請重新整理頁面。");
+      });
   }
 
 
   /* =======================================================
-     10. TOURNAMENT DATA
+     12. 賽事
   ======================================================= */
 
-  var tournaments = [
+  var tournamentList = byId("tournamentList");
+  var tournamentSearch = byId("tournamentSearch");
+  var filterButtons = document.querySelectorAll(".filter-button");
 
-    {
-      id: 1,
-      type: "team",
-      typeName: "戰隊賽",
-      status: "open",
-      statusName: "報名中",
-      title: "窩室戰隊聯賽 第一季",
-      date: "2026 / 10 / 18",
-      time: "19:00",
-      location: "窩室競技場",
-      quota: "8 隊"
-    },
-
-    {
-      id: 2,
-      type: "solo",
-      typeName: "個人賽",
-      status: "open",
-      statusName: "報名中",
-      title: "陀螺爭霸月賽 VOL.01",
-      date: "2026 / 10 / 25",
-      time: "14:00",
-      location: "窩室競技場",
-      quota: "32 人"
-    },
-
-    {
-      id: 3,
-      type: "team",
-      typeName: "戰隊賽",
-      status: "coming",
-      statusName: "即將開放",
-      title: "窩室戰隊聯賽 第二季",
-      date: "2026 / 11 / 08",
-      time: "19:00",
-      location: "窩室競技場",
-      quota: "8 隊"
-    },
-
-    {
-      id: 4,
-      type: "solo",
-      typeName: "個人賽",
-      status: "coming",
-      statusName: "即將開放",
-      title: "冬季陀螺爭霸戰",
-      date: "2026 / 12 / 06",
-      time: "13:00",
-      location: "窩室競技場",
-      quota: "64 人"
-    }
-
-  ];
+  var tournaments = [];
+  var currentFilter = "all";
+  var tournamentsLoaded = false;
 
 
-  var currentTournamentFilter =
-    "all";
+  function getTypeInfo(tournament) {
 
-
-  /* =======================================================
-     11. TOURNAMENT FILTER
-  ======================================================= */
-
-  var filterButtons =
-    document.querySelectorAll(
-      ".filter-button"
-    );
-
-
-  filterButtons.forEach(
-    function (button) {
-
-      button.addEventListener(
-        "click",
-        function () {
-
-          var filter =
-            button.getAttribute(
-              "data-filter"
-            );
-
-
-          if (!filter) {
-
-            filter =
-              "all";
-
-          }
-
-
-          currentTournamentFilter =
-            filter;
-
-
-          filterButtons.forEach(
-            function (item) {
-
-              item.classList.remove(
-                "active"
-              );
-
-            }
-          );
-
-
-          button.classList.add(
-            "active"
-          );
-
-
-          renderTournamentList();
-
-        }
-      );
-
-    }
-  );
-
-
-  /* =======================================================
-     12. TOURNAMENT SEARCH
-  ======================================================= */
-
-  var tournamentSearch =
-    document.getElementById(
-      "tournamentSearch"
-    );
-
-
-  if (tournamentSearch) {
-
-    tournamentSearch.addEventListener(
-      "input",
-      function () {
-
-        renderTournamentList();
-
-      }
-    );
-
+    return TOURNAMENT_TYPES[tournament.tournament_type] || {
+      name: tournament.tournament_type || "賽事",
+      tag: "EVENT",
+      icon: "◆"
+    };
   }
 
 
-  function getTournamentSearchKeyword() {
+  function getStatusInfo(tournament) {
 
-    if (!tournamentSearch) {
-
-      return "";
-
-    }
-
-
-    return String(
-      tournamentSearch.value || ""
-    )
-      .trim()
-      .toLowerCase();
-
+    return TOURNAMENT_STATUSES[tournament.status] || {
+      name: tournament.status || "",
+      tag: String(tournament.status || "").toUpperCase()
+    };
   }
 
 
-  function tournamentMatchesFilter(
-    tournament
-  ) {
+  function getQuotaText(tournament) {
 
-    if (
-      currentTournamentFilter ===
-      "all"
-    ) {
+    if (tournament.max_teams) {
+      return tournament.max_teams + " 隊";
+    }
 
+    if (tournament.max_players) {
+      return tournament.max_players + " 人";
+    }
+
+    return "";
+  }
+
+
+  function matchesFilter(tournament) {
+
+    if (currentFilter === "all") {
       return true;
-
     }
 
-
-    if (
-      currentTournamentFilter ===
-      "team"
-    ) {
-
-      return (
-        tournament.type ===
-        "team"
-      );
-
+    if (currentFilter === "open") {
+      return tournament.status === "open";
     }
 
-
-    if (
-      currentTournamentFilter ===
-      "solo"
-    ) {
-
-      return (
-        tournament.type ===
-        "solo"
-      );
-
-    }
-
-
-    if (
-      currentTournamentFilter ===
-      "open"
-    ) {
-
-      return (
-        tournament.status ===
-        "open"
-      );
-
-    }
-
-
-    return true;
-
+    return tournament.tournament_type === currentFilter;
   }
 
 
-  function tournamentMatchesSearch(
-    tournament,
-    keyword
-  ) {
+  function matchesSearch(tournament, keyword) {
 
     if (!keyword) {
-
       return true;
-
     }
 
+    var text = [
+      tournament.title,
+      tournament.description,
+      tournament.location,
+      getTypeInfo(tournament).name,
+      getStatusInfo(tournament).name
+    ].join(" ").toLowerCase();
 
-    var text =
-      (
-        tournament.title +
-        " " +
-        tournament.typeName +
-        " " +
-        tournament.statusName +
-        " " +
-        tournament.date +
-        " " +
-        tournament.location
-      )
-        .toLowerCase();
-
-
-    return text.indexOf(
-      keyword
-    ) !== -1;
-
+    return text.indexOf(keyword) !== -1;
   }
 
-
-  /* =======================================================
-     13. RENDER TOURNAMENT LIST
-  ======================================================= */
 
   function renderTournamentList() {
 
-    var container =
-      document.getElementById(
-        "tournamentList"
-      );
-
-
-    if (!container) {
-
+    if (!tournamentList || !tournamentsLoaded) {
       return;
-
     }
 
+    var keyword = tournamentSearch
+      ? String(tournamentSearch.value || "").trim().toLowerCase()
+      : "";
 
-    var keyword =
-      getTournamentSearchKeyword();
+    var filtered = tournaments.filter(function (tournament) {
+      return matchesFilter(tournament) && matchesSearch(tournament, keyword);
+    });
 
-
-    var filtered =
-      tournaments.filter(
-        function (tournament) {
-
-          return (
-            tournamentMatchesFilter(
-              tournament
-            ) &&
-            tournamentMatchesSearch(
-              tournament,
-              keyword
-            )
-          );
-
-        }
+    if (!filtered.length) {
+      renderState(
+        tournamentList,
+        "empty",
+        tournaments.length
+          ? "沒有符合條件的賽事，試試其他關鍵字或篩選。"
+          : "目前沒有公開的賽事，新賽事會公布在這裡。"
       );
-
-
-    container.innerHTML =
-      "";
-
-
-    if (
-      filtered.length === 0
-    ) {
-
-      var empty =
-        document.createElement(
-          "div"
-        );
-
-      empty.className =
-        "tournament-empty";
-
-      empty.textContent =
-        "目前沒有符合條件的賽事";
-
-      container.appendChild(
-        empty
-      );
-
       return;
-
     }
 
+    clear(tournamentList);
 
-    filtered.forEach(
-      function (tournament) {
-
-        var card =
-          createTournamentCard(
-            tournament
-          );
-
-        container.appendChild(
-          card
-        );
-
-      }
-    );
-
+    filtered.forEach(function (tournament) {
+      tournamentList.appendChild(createTournamentCard(tournament));
+    });
   }
 
 
-  function createTournamentCard(
-    tournament
-  ) {
+  function createTournamentCard(tournament) {
 
-    var card =
-      document.createElement(
-        "article"
-      );
+    var typeInfo = getTypeInfo(tournament);
+    var statusInfo = getStatusInfo(tournament);
+    var statusCss = cssToken(tournament.status);
 
-
-    card.className =
-      "tournament-card";
+    var card = el("article", "tournament-card status-" + statusCss);
 
 
-    var image =
-      document.createElement(
-        "div"
-      );
+    /* 圖片區 */
+    var image = el("div", "tournament-image");
+    var cover = safeUrl(tournament.cover_image_url);
 
+    if (cover) {
 
-    image.className =
-      "tournament-image";
+      var img = el("img");
+      img.src = cover;
+      img.alt = tournament.title || "";
+      img.loading = "lazy";
 
-
-    var imageIcon =
-      document.createElement(
-        "span"
-      );
-
-
-    if (
-      tournament.type ===
-      "team"
-    ) {
-
-      imageIcon.textContent =
-        "⚔";
+      image.appendChild(img);
+      image.classList.add("has-cover");
 
     } else {
-
-      imageIcon.textContent =
-        "◉";
-
+      image.appendChild(el("span", null, typeInfo.icon));
     }
-
 
     image.appendChild(
-      imageIcon
+      el("span", "tournament-status status-" + statusCss, statusInfo.name)
     );
 
 
-    var content =
-      document.createElement(
-        "div"
-      );
+    /* 內容區 */
+    var content = el("div", "tournament-content");
+
+    content.appendChild(el("div", "tournament-tag", typeInfo.tag));
+    content.appendChild(el("h2", null, tournament.title));
+
+    if (tournament.description) {
+      content.appendChild(el("p", "tournament-desc", tournament.description));
+    }
+
+    var info = el("div", "tournament-info");
+    var start = parseDateTime(tournament.start_at);
+
+    info.appendChild(el("span", null, "📅 " + formatDate(start)));
+
+    if (formatTime(start)) {
+      info.appendChild(el("span", null, "⏰ " + formatTime(start)));
+    }
+
+    if (tournament.location) {
+      info.appendChild(el("span", null, "📍 " + tournament.location));
+    }
+
+    if (getQuotaText(tournament)) {
+      info.appendChild(el("span", null, "👥 " + getQuotaText(tournament)));
+    }
+
+    info.appendChild(el("span", null, "🎫 " + formatMoney(tournament.entry_fee)));
+
+    content.appendChild(info);
 
 
-    content.className =
-      "tournament-content";
-
-
-    var tag =
-      document.createElement(
-        "div"
-      );
-
-
-    tag.className =
-      "tournament-tag";
-
-
-    tag.textContent =
-      tournament.typeName +
-      " / " +
-      tournament.statusName;
-
-
-    var title =
-      document.createElement(
-        "h2"
-      );
-
-
-    title.textContent =
-      tournament.title;
-
-
-    var info =
-      document.createElement(
-        "div"
-      );
-
-
-    info.className =
-      "tournament-info";
-
-
-    var date =
-      document.createElement(
-        "span"
-      );
-
-
-    date.textContent =
-      "📅 " +
-      tournament.date;
-
-
-    var time =
-      document.createElement(
-        "span"
-      );
-
-
-    time.textContent =
-      "◷ " +
-      tournament.time;
-
-
-    var location =
-      document.createElement(
-        "span"
-      );
-
-
-    location.textContent =
-      "⌖ " +
-      tournament.location;
-
-
-    var quota =
-      document.createElement(
-        "span"
-      );
-
-
-    quota.textContent =
-      "👥 " +
-      tournament.quota;
-
-
-    info.appendChild(
-      date
+    /* 按鈕 */
+    var button = el(
+      "button",
+      tournament.status === "open"
+        ? "primary-button tournament-button"
+        : "secondary-button tournament-button"
     );
 
-    info.appendChild(
-      time
+    button.type = "button";
+    button.appendChild(el("span", null, "查看賽事"));
+    button.appendChild(el("strong", null, "→"));
+
+    button.addEventListener("click", function () {
+      openTournamentModal(tournament);
+    });
+
+    content.appendChild(button);
+
+
+    card.appendChild(image);
+    card.appendChild(content);
+
+    return card;
+  }
+
+
+  function openTournamentModal(tournament) {
+
+    var typeInfo = getTypeInfo(tournament);
+    var statusInfo = getStatusInfo(tournament);
+
+    var wrapper = el("div");
+
+    var cover = safeUrl(tournament.cover_image_url);
+
+    if (cover) {
+      var image = el("img", "modal-cover");
+      image.src = cover;
+      image.alt = tournament.title || "";
+      wrapper.appendChild(image);
+    }
+
+    var content = el("div", "modal-content");
+
+    content.appendChild(
+      el("div", "modal-kicker", typeInfo.tag + " / " + statusInfo.name)
     );
 
-    info.appendChild(
-      location
-    );
-
-    info.appendChild(
-      quota
-    );
+    var title = el("h2", null, tournament.title);
+    title.id = "modalTitle";
+    content.appendChild(title);
 
 
-    var button =
-      document.createElement(
-        "button"
+    var registrationPeriod = "";
+
+    if (tournament.registration_start_at || tournament.registration_end_at) {
+      registrationPeriod =
+        formatDateTime(tournament.registration_start_at) +
+        " ～ " +
+        formatDateTime(tournament.registration_end_at);
+    }
+
+    var endDate = parseDateTime(tournament.end_at);
+    var schedule = formatDateTime(tournament.start_at);
+
+    if (endDate && tournament.end_at !== tournament.start_at) {
+      schedule += " ～ " + formatDateTime(tournament.end_at);
+    }
+
+    content.appendChild(createModalInfo([
+      { label: "比賽時間", value: schedule },
+      { label: "地點", value: tournament.location },
+      { label: "賽制", value: typeInfo.name },
+      { label: "名額", value: getQuotaText(tournament) },
+      { label: "報名費", value: formatMoney(tournament.entry_fee) },
+      { label: "報名期間", value: registrationPeriod }
+    ]));
+
+
+    if (tournament.description) {
+      var text = el("div", "modal-text");
+      appendParagraphs(text, tournament.description);
+      content.appendChild(text);
+    }
+
+
+    /* 報名區：線上報名完成前，先導到 LINE */
+    var action = el("div", "modal-action");
+    var lineUrl = safeUrl(SITE_LINKS.line);
+
+    if (tournament.status === "open") {
+
+      action.appendChild(
+        el("p", null, "線上報名即將開放，目前請透過 LINE 官方帳號報名。")
       );
 
+      if (lineUrl) {
+        var lineButton = el("a", "primary-button");
+        lineButton.href = lineUrl;
+        lineButton.target = "_blank";
+        lineButton.rel = "noopener";
+        lineButton.appendChild(el("span", null, "LINE 報名"));
+        lineButton.appendChild(el("strong", null, "→"));
+        action.appendChild(lineButton);
+      }
 
-    button.className =
-      "primary-button tournament-button";
+    } else if (tournament.status === "coming") {
 
-
-    if (
-      tournament.status ===
-      "open"
-    ) {
-
-      button.innerHTML =
-        "立即報名 <strong>→</strong>";
-
-
-      button.addEventListener(
-        "click",
-        function () {
-
-          openRegistration(
-            tournament
-          );
-
-        }
+      action.appendChild(
+        el("p", null, "報名尚未開放，開放時間會公布在最新消息。")
       );
 
     } else {
 
-      button.innerHTML =
-        "尚未開放 <strong>•</strong>";
-
-      button.disabled =
-        true;
-
-      button.style.opacity =
-        "0.45";
-
-      button.style.cursor =
-        "not-allowed";
-
+      action.appendChild(el("p", null, "此賽事目前不開放報名。"));
     }
 
+    content.appendChild(action);
 
-    content.appendChild(
-      tag
-    );
+    wrapper.appendChild(content);
 
-    content.appendChild(
-      title
-    );
-
-    content.appendChild(
-      info
-    );
-
-    content.appendChild(
-      button
-    );
-
-
-    card.appendChild(
-      image
-    );
-
-    card.appendChild(
-      content
-    );
-
-
-    return card;
-
+    openModal(wrapper);
   }
 
 
-  /* =======================================================
-     14. REGISTRATION
-  ======================================================= */
+  /* 首頁主打賽事 */
+  var featuredTournament = null;
 
-  function openRegistration(
-    tournament
-  ) {
 
-    if (!tournament) {
+  function renderFeaturedEvent() {
 
+    var section = byId("featuredSection");
+
+    if (!section) {
       return;
-
     }
 
-
-    console.log(
-      "準備報名賽事：",
-      tournament.title
-    );
-
-
-    /*
-      目前先切換到賽事報名頁。
-
-      下一階段串接 Cloudflare D1
-      + LINE Login
-      + 金流後，
-      這裡會改成真正的報名流程。
-    */
-
-    switchPage(
-      "tournaments"
-    );
-
-
-    showRegistrationMessage(
-      tournament
-    );
-
-  }
-
-
-  function showRegistrationMessage(
-    tournament
-  ) {
-
-    var oldMessage =
-      document.querySelector(
-        ".registration-message"
-      );
-
-
-    if (oldMessage) {
-
-      oldMessage.remove();
-
-    }
-
-
-    var container =
-      document.getElementById(
-        "tournamentList"
-      );
-
-
-    if (!container) {
-
-      return;
-
-    }
-
-
-    var message =
-      document.createElement(
-        "div"
-      );
-
-
-    message.className =
-      "registration-message";
-
-
-    message.textContent =
-      "已選擇：「" +
-      tournament.title +
-      "」";
-
-
-    container.insertBefore(
-      message,
-      container.firstChild
-    );
-
-
-    setTimeout(
-      function () {
-
-        if (
-          message &&
-          message.parentNode
-        ) {
-
-          message.remove();
-
+    function firstWithStatus(status) {
+      for (var i = 0; i < tournaments.length; i++) {
+        if (tournaments[i].status === status) {
+          return tournaments[i];
         }
-
-      },
-      3000
-    );
-
-  }
-
-
-  /* =======================================================
-     15. LEAGUE MATCH DEMO DATA
-  ======================================================= */
-
-  var leagueMatches = [
-
-    {
-      time: "20:00",
-      teamA: "戰隊 C",
-      teamB: "戰隊 D",
-      scoreA: "5",
-      scoreB: "4",
-      status: "finished",
-      statusName: "比賽結束"
-    },
-
-    {
-      time: "21:30",
-      teamA: "戰隊 A",
-      teamB: "戰隊 B",
-      scoreA: "2",
-      scoreB: "3",
-      status: "finished",
-      statusName: "比賽結束"
-    },
-
-    {
-      time: "23:00",
-      teamA: "戰隊 E",
-      teamB: "戰隊 F",
-      scoreA: "-",
-      scoreB: "-",
-      status: "upcoming",
-      statusName: "未開賽"
-    }
-
-  ];
-
-
-  /* =======================================================
-     16. RENDER LEAGUE MATCHES
-  ======================================================= */
-
-  function renderLeagueMatches() {
-
-    var container =
-      document.getElementById(
-        "matchList"
-      );
-
-
-    if (!container) {
-
-      return;
-
-    }
-
-
-    container.innerHTML =
-      "";
-
-
-    leagueMatches.forEach(
-      function (match) {
-
-        var card =
-          document.createElement(
-            "article"
-          );
-
-
-        card.className =
-          "match-card " +
-          match.status;
-
-
-        var time =
-          document.createElement(
-            "div"
-          );
-
-
-        time.className =
-          "match-time";
-
-
-        var timeText =
-          document.createElement(
-            "span"
-          );
-
-
-        timeText.textContent =
-          match.time;
-
-
-        var timeStatus =
-          document.createElement(
-            "small"
-          );
-
-
-        timeStatus.textContent =
-          match.statusName;
-
-
-        time.appendChild(
-          timeText
-        );
-
-        time.appendChild(
-          timeStatus
-        );
-
-
-        var teams =
-          document.createElement(
-            "div"
-          );
-
-
-        teams.className =
-          "match-teams";
-
-
-        var teamA =
-          createTeamElement(
-            match.teamA,
-            false
-          );
-
-
-        var score =
-          document.createElement(
-            "div"
-          );
-
-
-        score.className =
-          "match-score";
-
-
-        var scoreStrong =
-          document.createElement(
-            "strong"
-          );
-
-
-        scoreStrong.textContent =
-          match.scoreA +
-          " : " +
-          match.scoreB;
-
-
-        var scoreStatus =
-          document.createElement(
-            "span"
-          );
-
-
-        scoreStatus.textContent =
-          match.statusName;
-
-
-        score.appendChild(
-          scoreStrong
-        );
-
-        score.appendChild(
-          scoreStatus
-        );
-
-
-        var teamB =
-          createTeamElement(
-            match.teamB,
-            true
-          );
-
-
-        teams.appendChild(
-          teamA
-        );
-
-        teams.appendChild(
-          score
-        );
-
-        teams.appendChild(
-          teamB
-        );
-
-
-        card.appendChild(
-          time
-        );
-
-        card.appendChild(
-          teams
-        );
-
-
-        container.appendChild(
-          card
-        );
-
       }
-    );
+      return null;
+    }
 
+    featuredTournament =
+      firstWithStatus("open") ||
+      firstWithStatus("coming") ||
+      firstWithStatus("ongoing");
+
+    if (!featuredTournament) {
+      section.hidden = true;
+      return;
+    }
+
+    var typeInfo = getTypeInfo(featuredTournament);
+    var isOpen = featuredTournament.status === "open";
+
+    byId("featuredKicker").textContent = isOpen
+      ? "REGISTRATION OPEN"
+      : "UPCOMING EVENT";
+
+    byId("featuredTitle").textContent = featuredTournament.title;
+
+    var description = String(featuredTournament.description || "");
+
+    byId("featuredDesc").textContent = description.length > 60
+      ? description.slice(0, 60) + "…"
+      : description;
+
+    var meta = byId("featuredMeta");
+    clear(meta);
+    meta.appendChild(
+      el("span", null, "📅 " + formatDate(parseDateTime(featuredTournament.start_at)))
+    );
+    meta.appendChild(el("span", null, typeInfo.icon + " " + typeInfo.tag));
+    meta.appendChild(el("span", null, getStatusInfo(featuredTournament).name));
+
+    var buttonText = byId("featuredButton").querySelector("span");
+
+    if (buttonText) {
+      buttonText.textContent = isOpen ? "立即報名" : "查看賽事";
+    }
+
+    section.hidden = false;
   }
 
 
-  function createTeamElement(
-    name,
-    reverse
-  ) {
+  function initTournamentControls() {
 
-    var team =
-      document.createElement(
-        "div"
-      );
+    var featuredButton = byId("featuredButton");
+
+    if (featuredButton) {
+      featuredButton.addEventListener("click", function () {
+        if (featuredTournament) {
+          openTournamentModal(featuredTournament);
+        }
+      });
+    }
+
+    filterButtons.forEach(function (button) {
+
+      button.addEventListener("click", function () {
+
+        currentFilter = button.getAttribute("data-filter") || "all";
+
+        filterButtons.forEach(function (item) {
+          item.classList.toggle("active", item === button);
+        });
+
+        renderTournamentList();
+      });
+    });
+
+    if (tournamentSearch) {
+      tournamentSearch.addEventListener("input", renderTournamentList);
+    }
+  }
 
 
-    team.className =
-      "team";
+  function loadTournaments() {
 
+    renderState(tournamentList, "loading", "賽事載入中…");
+
+    return apiGet("/api/tournaments")
+      .then(function (response) {
+
+        tournaments = response.data || [];
+        tournamentsLoaded = true;
+
+        renderTournamentList();
+        renderFeaturedEvent();
+      })
+      .catch(function (error) {
+        console.error("賽事載入失敗", error);
+        renderState(tournamentList, "error", "賽事載入失敗，請重新整理頁面。");
+      });
+  }
+
+
+  /* =======================================================
+     13. 戰隊聯賽
+  ======================================================= */
+
+  var matchList = byId("matchList");
+  var leagueDateTabs = byId("leagueDateTabs");
+
+  var leagueGroups = [];
+  var activeLeagueKey = null;
+
+
+  function groupMatchesByDate(matches) {
+
+    var map = {};
+    var order = [];
+
+    matches.forEach(function (match) {
+
+      var parts = parseDateTime(match.scheduled_at);
+      var key = parts ? parts.key : "unknown";
+
+      if (!map[key]) {
+        map[key] = { key: key, date: parts, matches: [] };
+        order.push(key);
+      }
+
+      map[key].matches.push(match);
+    });
+
+    return order.map(function (key) {
+      return map[key];
+    });
+  }
+
+
+  /* 預設顯示：今天或之後最近的一天；全部都過了就顯示最後一天 */
+  function pickDefaultLeagueKey(groups) {
+
+    var today = todayKey();
+
+    for (var i = 0; i < groups.length; i++) {
+      if (groups[i].key >= today) {
+        return groups[i].key;
+      }
+    }
+
+    return groups.length ? groups[groups.length - 1].key : null;
+  }
+
+
+  function findLeagueGroup(key) {
+
+    for (var i = 0; i < leagueGroups.length; i++) {
+      if (leagueGroups[i].key === key) {
+        return leagueGroups[i];
+      }
+    }
+
+    return null;
+  }
+
+
+  function renderLeagueTabs(silent) {
+
+    clear(leagueDateTabs);
+
+    if (leagueGroups.length <= 1) {
+      return;
+    }
+
+    leagueGroups.forEach(function (group) {
+
+      var label = group.date
+        ? pad2(group.date.month) + "/" + pad2(group.date.day) +
+          "（" + weekdayOf(group.date) + "）"
+        : "未定";
+
+      var tab = el("button", "date-tab", label);
+
+      tab.type = "button";
+      tab.setAttribute("role", "tab");
+
+      var isActive = group.key === activeLeagueKey;
+
+      tab.classList.toggle("active", isActive);
+      tab.setAttribute("aria-selected", isActive ? "true" : "false");
+
+      tab.addEventListener("click", function () {
+        activeLeagueKey = group.key;
+        renderLeagueTabs();
+        renderLeagueDay();
+      });
+
+      leagueDateTabs.appendChild(tab);
+    });
+
+    /* 讓目前選取的日期出現在可視範圍 */
+    var activeTab = leagueDateTabs.querySelector(".date-tab.active");
+
+    if (!silent && activeTab && activeTab.scrollIntoView) {
+      activeTab.scrollIntoView({ block: "nearest", inline: "center" });
+    }
+  }
+
+
+  function setLeaguePanel(label, value, time) {
+
+    byId("leagueDateLabel").textContent = label;
+    byId("leagueDateValue").textContent = value;
+    byId("leagueDateTime").textContent = time;
+  }
+
+
+  function renderLeagueDay() {
+
+    var group = findLeagueGroup(activeLeagueKey);
+
+    if (!group) {
+      return;
+    }
+
+    var times = group.matches
+      .map(function (match) {
+        return formatTime(parseDateTime(match.scheduled_at));
+      })
+      .filter(Boolean);
+
+    var timeRange = "";
+
+    if (times.length) {
+      timeRange = times[0] === times[times.length - 1]
+        ? times[0]
+        : times[0] + " — " + times[times.length - 1];
+    }
+
+    var firstMatch = group.matches[0];
+    var label = "MATCH DAY";
+
+    if (firstMatch.tournament_title) {
+      label = firstMatch.tournament_title;
+    }
+
+    if (firstMatch.round_number) {
+      label += " / ROUND " + firstMatch.round_number;
+    }
+
+    setLeaguePanel(label, formatDate(group.date), timeRange);
+
+    clear(matchList);
+
+    group.matches.forEach(function (match) {
+      matchList.appendChild(createMatchCard(match));
+    });
+  }
+
+
+  function createTeamElement(name, logoUrl, reverse, isWinner) {
+
+    var className = "team";
 
     if (reverse) {
+      className += " team-b";
+    }
 
-      team.classList.add(
-        "team-b"
-      );
+    if (isWinner) {
+      className += " is-winner";
+    }
 
+    var team = el("div", className);
+    var logo = el("div", "team-logo");
+    var url = safeUrl(logoUrl);
+
+    if (url) {
+      var img = el("img");
+      img.src = url;
+      img.alt = "";
+      img.loading = "lazy";
+      logo.appendChild(img);
+    } else {
+      logo.textContent = initialOf(name);
+    }
+
+    team.appendChild(logo);
+    team.appendChild(el("div", "team-name", name || "待定"));
+
+    return team;
+  }
+
+
+  function createMatchCard(match) {
+
+    var status = MATCH_STATUSES[match.status] || {
+      name: match.status || "",
+      tag: String(match.status || "").toUpperCase(),
+      css: cssToken(match.status)
+    };
+
+    var parts = parseDateTime(match.scheduled_at);
+    var card = el("article", "match-card " + status.css);
+
+
+    var time = el("div", "match-time");
+    time.appendChild(el("span", null, formatTime(parts) || "--:--"));
+    time.appendChild(el("small", null, status.tag));
+
+
+    var teams = el("div", "match-teams");
+
+    var winnerId = match.winner_team_id;
+
+    teams.appendChild(
+      createTeamElement(
+        match.team_a_name,
+        match.team_a_logo,
+        false,
+        winnerId && winnerId === match.team_a_id
+      )
+    );
+
+
+    var score = el("div", "match-score");
+
+    var hasScore =
+      match.score_a !== null && match.score_a !== undefined &&
+      match.score_b !== null && match.score_b !== undefined;
+
+    score.appendChild(
+      el("strong", null, hasScore ? match.score_a + " : " + match.score_b : "VS")
+    );
+
+    var resultText = status.name;
+
+    if (match.status === "finished" && match.winner_team_name) {
+      resultText = match.winner_team_name + " 勝利";
+    }
+
+    score.appendChild(el("span", null, resultText));
+
+    if (match.field_name) {
+      score.appendChild(el("small", "match-field", match.field_name));
+    }
+
+    if (match.note) {
+      score.appendChild(el("small", "match-note", match.note));
+    }
+
+    teams.appendChild(score);
+
+
+    teams.appendChild(
+      createTeamElement(
+        match.team_b_name,
+        match.team_b_logo,
+        true,
+        winnerId && winnerId === match.team_b_id
+      )
+    );
+
+
+    card.appendChild(time);
+    card.appendChild(teams);
+
+    return card;
+  }
+
+
+  /* silent = 背景自動更新：不顯示載入中、保留目前選的日期 */
+  function loadLeague(silent) {
+
+    if (!silent) {
+      renderState(matchList, "loading", "賽程載入中…");
+    }
+
+    return apiGet("/api/league")
+      .then(function (response) {
+
+        var matches = response.data || [];
+
+        if (!matches.length) {
+          leagueGroups = [];
+          clear(leagueDateTabs);
+          setLeaguePanel("MATCH DAY", "即將公布", "");
+          renderState(matchList, "empty", "目前沒有排定的賽程，公布後會顯示在這裡。");
+          return;
+        }
+
+        var previousKey = activeLeagueKey;
+
+        leagueGroups = groupMatchesByDate(matches);
+
+        if (!silent || !previousKey || !findLeagueGroup(previousKey)) {
+          activeLeagueKey = pickDefaultLeagueKey(leagueGroups);
+        }
+
+        renderLeagueTabs(silent);
+        renderLeagueDay();
+      })
+      .catch(function (error) {
+
+        console.error("賽程載入失敗", error);
+
+        /* 背景更新失敗就保留目前畫面，下次再試 */
+        if (!silent) {
+          setLeaguePanel("MATCH DAY", "—", "");
+          renderState(matchList, "error", "賽程載入失敗，請重新整理頁面。");
+        }
+      });
+  }
+
+
+  function hasLiveMatch() {
+
+    return leagueGroups.some(function (group) {
+      return group.matches.some(function (match) {
+        return match.status === "live";
+      });
+    });
+  }
+
+
+  /*
+    即時比分：停留在「戰隊聯賽」頁時自動更新。
+    有比賽進行中每 10 秒，沒有則每 60 秒。
+  */
+  var leaguePollTimer = null;
+
+  function scheduleLeaguePoll() {
+
+    clearTimeout(leaguePollTimer);
+
+    leaguePollTimer = setTimeout(function () {
+
+      if (!document.hidden && getPageFromHash() === "league") {
+        loadLeague(true).then(scheduleLeaguePoll);
+      } else {
+        scheduleLeaguePoll();
+      }
+
+    }, hasLiveMatch() ? 10000 : 60000);
+  }
+
+
+  document.addEventListener("visibilitychange", function () {
+
+    if (!document.hidden && getPageFromHash() === "league") {
+      loadLeague(true);
+    }
+  });
+
+
+  /* =======================================================
+     14. 陀螺爭霸排行榜
+  ======================================================= */
+
+  var rankingBoard = byId("rankingBoard");
+  var rankingSeason = byId("rankingSeason");
+
+
+  function createRankingCard(item, index) {
+
+    var tier = RANK_TIERS[index];
+    var isTop = Boolean(tier);
+    var displayName = item.nickname || item.player_name;
+
+    var card = el("article", "ranking-card " + (isTop ? tier.css : "rank-normal"));
+
+    card.appendChild(el("div", "rank-number", pad2(item.rank_number || index + 1)));
+
+    if (index === 0) {
+      card.appendChild(el("div", "rank-crown", "♛"));
     }
 
 
-    var logo =
-      document.createElement(
-        "div"
-      );
+    var avatar = el("div", "rank-avatar");
+    var avatarUrl = safeUrl(item.avatar_url);
+
+    if (avatarUrl) {
+      var img = el("img");
+      img.src = avatarUrl;
+      img.alt = "";
+      img.loading = "lazy";
+      avatar.appendChild(img);
+    } else {
+      avatar.textContent = initialOf(displayName);
+    }
+
+    card.appendChild(avatar);
 
 
-    logo.className =
-      "team-logo";
+    var info = el("div", "rank-info");
 
+    if (isTop) {
+      info.appendChild(el("div", "rank-label", tier.label));
+    }
 
-    logo.textContent =
-      "⚔";
+    info.appendChild(el(isTop ? "h2" : "h3", null, displayName));
 
+    if (item.team_name) {
+      info.appendChild(el("div", "rank-team", item.team_name));
+    }
 
-    var teamName =
-      document.createElement(
-        "span"
-      );
+    var count = el("div", "rank-count");
+    count.appendChild(el("strong", null, item.upper_count || 0));
+    count.appendChild(el("span", null, "上位"));
+    info.appendChild(count);
 
-
-    teamName.className =
-      "team-name";
-
-
-    teamName.textContent =
-      name;
-
-
-    team.appendChild(
-      logo
+    info.appendChild(
+      el(
+        "div",
+        "rank-stats",
+        "勝場 " + (item.win_count || 0) + "｜積分 " + (item.points || 0)
+      )
     );
 
-    team.appendChild(
-      teamName
-    );
+    card.appendChild(info);
+
+    card.appendChild(el("div", "rank-badge", isTop ? tier.badge : "IRON"));
+
+    return card;
+  }
 
 
-    return team;
+  function loadRanking() {
 
+    renderState(rankingBoard, "loading", "排行榜載入中…");
+
+    return apiGet("/api/ranking")
+      .then(function (response) {
+
+        if (rankingSeason) {
+          rankingSeason.textContent = response.season
+            ? String(response.season).toUpperCase()
+            : "SEASON";
+        }
+
+        var items = response.data || [];
+
+        if (!items.length) {
+          renderState(rankingBoard, "empty", "本季排行榜尚未公布。");
+          return;
+        }
+
+        clear(rankingBoard);
+
+        var normalList = el("div", "ranking-list");
+
+        items.forEach(function (item, index) {
+
+          var card = createRankingCard(item, index);
+
+          if (index < 3) {
+            rankingBoard.appendChild(card);
+          } else {
+            normalList.appendChild(card);
+          }
+        });
+
+        if (normalList.childNodes.length) {
+          rankingBoard.appendChild(normalList);
+        }
+      })
+      .catch(function (error) {
+        console.error("排行榜載入失敗", error);
+        renderState(rankingBoard, "error", "排行榜載入失敗，請重新整理頁面。");
+      });
   }
 
 
   /* =======================================================
-     17. RESPONSIVE
-  ======================================================= */
-
-  window.addEventListener(
-    "resize",
-    function () {
-
-      if (
-        window.innerWidth > 760
-      ) {
-
-        closeMobileSidebar();
-
-      }
-
-    }
-  );
-
-
-  /* =======================================================
-     18. INITIALIZE
+     15. 初始化
   ======================================================= */
 
   function init() {
 
     loadSidebarState();
+    applySiteLinks();
 
-    loadCurrentPage();
+    showPage(getPageFromHash());
 
-    showSlide(0);
+    initSliderControls();
+    initTournamentControls();
 
-    startSlider();
-
-    renderTournamentList();
-
-    renderLeagueMatches();
-
+    loadSlider();
+    loadNews();
+    loadTournaments();
+    loadLeague().then(scheduleLeaguePoll);
+    loadRanking();
   }
 
 
   init();
-
 
 })();

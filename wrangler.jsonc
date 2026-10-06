@@ -14,9 +14,10 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "ourspace-erp-db",
-      "database_id": "cade1a10-97e1-49df-9ce6-bf7b670d1611",
-      "migrations_dir": "migrations"
+      "database_name": "ourspace-web-db",
+      "database_id": "3b963882-6018-4765-9cb5-6f8834ebf407",
+      "migrations_dir": "migrations",
+      "remote": true
     }
   ]
 }

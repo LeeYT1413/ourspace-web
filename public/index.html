@@ -2,10 +2,8 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
-  >
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#05060a">
 
   <title>OurSpace｜窩室</title>
 
@@ -14,7 +12,15 @@
     content="OurSpace 窩室｜戰鬥陀螺、戰隊聯賽、賽事報名與競技活動"
   >
 
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="OurSpace｜窩室">
+  <meta
+    property="og:description"
+    content="戰鬥陀螺、戰隊聯賽、陀螺爭霸排行榜與賽事資訊"
+  >
+
   <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/app-data.css">
 </head>
 
 <body>
@@ -37,7 +43,6 @@
 
   <aside id="sidebar" class="sidebar">
 
-    <!-- Logo -->
     <div class="sidebar-logo">
 
       <div class="logo-mark">
@@ -52,44 +57,24 @@
     </div>
 
 
-    <!-- 導覽選單 -->
-    <nav class="sidebar-nav">
+    <nav class="sidebar-nav" aria-label="主選單">
 
-      <button
-        class="nav-item active"
-        data-page="news"
-        type="button"
-      >
+      <button class="nav-item active" data-page="news" type="button">
         <span class="nav-icon">✦</span>
         <span class="nav-label">最新消息</span>
       </button>
 
-
-      <button
-        class="nav-item"
-        data-page="league"
-        type="button"
-      >
+      <button class="nav-item" data-page="league" type="button">
         <span class="nav-icon">⚔</span>
         <span class="nav-label">戰隊聯賽</span>
       </button>
 
-
-      <button
-        class="nav-item"
-        data-page="ranking"
-        type="button"
-      >
+      <button class="nav-item" data-page="ranking" type="button">
         <span class="nav-icon">◈</span>
         <span class="nav-label">陀螺爭霸</span>
       </button>
 
-
-      <button
-        class="nav-item"
-        data-page="tournaments"
-        type="button"
-      >
+      <button class="nav-item" data-page="tournaments" type="button">
         <span class="nav-icon">◆</span>
         <span class="nav-label">賽事報名</span>
       </button>
@@ -97,7 +82,6 @@
     </nav>
 
 
-    <!-- 左下角展開按鈕 -->
     <button
       id="sidebarToggle"
       class="sidebar-toggle"
@@ -111,18 +95,11 @@
   </aside>
 
 
-  <!-- ========================================
-       手機遮罩
-  ========================================= -->
-
-  <div
-    id="mobileOverlay"
-    class="mobile-overlay"
-  ></div>
+  <div id="mobileOverlay" class="mobile-overlay"></div>
 
 
   <!-- ========================================
-       手機 / 桌面 Topbar
+       Topbar
   ========================================= -->
 
   <header class="topbar">
@@ -136,34 +113,14 @@
       ☰
     </button>
 
-
     <div class="topbar-title">
-
-      <div
-        id="topbarTitle"
-        class="topbar-main-title"
-      >
-        最新消息
-      </div>
-
-      <div
-        id="topbarSubtitle"
-        class="topbar-subtitle"
-      >
-        OURSPACE NEWS
-      </div>
-
+      <div id="topbarTitle" class="topbar-main-title">最新消息</div>
+      <div id="topbarSubtitle" class="topbar-subtitle">OURSPACE NEWS</div>
     </div>
 
-
     <div class="topbar-right">
-
       <div class="status-light"></div>
-
-      <span class="status-text">
-        ONLINE
-      </span>
-
+      <span class="status-text">ONLINE</span>
     </div>
 
   </header>
@@ -180,227 +137,104 @@
          最新消息
     ======================================= -->
 
-    <section
-      id="page-news"
-      class="page active"
-      data-page-content="news"
-    >
+    <section id="page-news" class="page active" data-page-content="news">
 
-      <!-- Hero -->
       <div class="hero-section">
 
-        <div class="hero-decoration hero-decoration-left">
-          01
-        </div>
-
-        <div class="hero-decoration hero-decoration-right">
-          OURSPACE
-        </div>
-
+        <div class="hero-decoration hero-decoration-left">01</div>
+        <div class="hero-decoration hero-decoration-right">OURSPACE</div>
 
         <div class="hero-content">
-
-          <div class="hero-tag">
-            OURSPACE / NEWS
-          </div>
-
+          <div class="hero-tag">OURSPACE / NEWS</div>
           <h1>
             窩室
             <strong>最新消息</strong>
           </h1>
-
-          <p>
-            戰鬥陀螺 × 競技 × 戰隊
-          </p>
-
+          <p>戰鬥陀螺 × 競技 × 戰隊</p>
           <div class="hero-line"></div>
-
         </div>
 
       </div>
 
 
-      <!-- 照片輪播 -->
+      <!-- 照片輪播：D1 news_images 有資料就換成照片，沒有就顯示預設畫面 -->
       <div class="section-block">
 
         <div class="section-header">
-
           <div>
-            <div class="section-kicker">
-              FEATURED
-            </div>
-
-            <h2>
-              賽事現場
-            </h2>
+            <div class="section-kicker">FEATURED</div>
+            <h2>賽事現場</h2>
           </div>
-
-          <div class="section-number">
-            01
-          </div>
-
+          <div class="section-number">01</div>
         </div>
 
-
-        <div class="photo-slider">
+        <div id="photoSlider" class="photo-slider">
 
           <button
+            id="sliderPrev"
             class="slider-button slider-prev"
             type="button"
             aria-label="上一張"
-          >
-            ‹
-          </button>
+          >‹</button>
 
-
-          <div class="slider-track">
+          <div id="sliderTrack" class="slider-track">
 
             <div class="slide active">
-
               <div class="slide-placeholder">
-
-                <div class="slide-symbol">
-                  O
-                </div>
-
-                <div class="slide-title">
-                  OURSPACE
-                </div>
-
-                <div class="slide-subtitle">
-                  BATTLE ARENA
-                </div>
-
+                <div class="slide-symbol">O</div>
+                <div class="slide-title">OURSPACE</div>
+                <div class="slide-subtitle">BATTLE ARENA</div>
               </div>
-
             </div>
 
-
             <div class="slide">
-
               <div class="slide-placeholder">
-
-                <div class="slide-symbol">
-                  ⚔
-                </div>
-
-                <div class="slide-title">
-                  TEAM BATTLE
-                </div>
-
-                <div class="slide-subtitle">
-                  戰隊聯賽
-                </div>
-
+                <div class="slide-symbol">⚔</div>
+                <div class="slide-title">TEAM BATTLE</div>
+                <div class="slide-subtitle">戰隊聯賽</div>
               </div>
-
             </div>
 
-
             <div class="slide">
-
               <div class="slide-placeholder">
-
-                <div class="slide-symbol">
-                  ◈
-                </div>
-
-                <div class="slide-title">
-                  BEYBLADE
-                </div>
-
-                <div class="slide-subtitle">
-                  陀螺爭霸
-                </div>
-
+                <div class="slide-symbol">◈</div>
+                <div class="slide-title">BEYBLADE</div>
+                <div class="slide-subtitle">陀螺爭霸</div>
               </div>
-
             </div>
 
           </div>
 
-
           <button
+            id="sliderNext"
             class="slider-button slider-next"
             type="button"
             aria-label="下一張"
-          >
-            ›
-          </button>
+          >›</button>
 
         </div>
 
-
-        <div class="slider-dots">
-
-          <button
-            class="slider-dot active"
-            type="button"
-            data-slide="0"
-          ></button>
-
-          <button
-            class="slider-dot"
-            type="button"
-            data-slide="1"
-          ></button>
-
-          <button
-            class="slider-dot"
-            type="button"
-            data-slide="2"
-          ></button>
-
-        </div>
+        <div id="sliderDots" class="slider-dots"></div>
 
       </div>
 
 
-      <!-- 賽事報名 CTA -->
-      <div class="section-block">
+      <!-- 主打賽事：自動選第一個「報名中」或「即將開放」的賽事 -->
+      <div id="featuredSection" class="section-block" hidden>
 
         <div class="featured-event">
 
-          <div class="event-decoration">
-            NEXT BATTLE
-          </div>
-
+          <div class="event-decoration">NEXT BATTLE</div>
 
           <div class="event-content">
-
-            <div class="event-kicker">
-              UPCOMING EVENT
-            </div>
-
-            <h2>
-              2026 窩室秋季戰隊聯賽
-            </h2>
-
-            <p>
-              組隊出征，挑戰最強戰隊。
-            </p>
-
-            <div class="event-meta">
-
-              <span>
-                📅 即將公開
-              </span>
-
-              <span>
-                ⚔ TEAM BATTLE
-              </span>
-
-            </div>
-
+            <div id="featuredKicker" class="event-kicker">UPCOMING EVENT</div>
+            <h2 id="featuredTitle">載入中…</h2>
+            <p id="featuredDesc"></p>
+            <div id="featuredMeta" class="event-meta"></div>
           </div>
 
-
-          <button
-            class="primary-button"
-            type="button"
-            data-page-link="tournaments"
-          >
-            <span>立即報名</span>
+          <button id="featuredButton" class="primary-button" type="button">
+            <span>查看賽事</span>
             <strong>→</strong>
           </button>
 
@@ -413,164 +247,42 @@
       <div class="section-block">
 
         <div class="section-header">
-
           <div>
-            <div class="section-kicker">
-              INFORMATION
-            </div>
-
-            <h2>
-              最新公告
-            </h2>
+            <div class="section-kicker">INFORMATION</div>
+            <h2>最新公告</h2>
           </div>
-
-          <div class="section-number">
-            02
-          </div>
-
+          <div class="section-number">02</div>
         </div>
 
-
-        <div class="news-list">
-
-          <article class="news-card">
-
-            <div class="news-date">
-              <span>05</span>
-              <small>OCT</small>
-            </div>
-
-            <div class="news-body">
-
-              <div class="news-tag">
-                EVENT
-              </div>
-
-              <h3>
-                窩室秋季戰隊聯賽即將開放報名
-              </h3>
-
-              <p>
-                全新賽季即將開始，準備好你的戰隊了嗎？
-              </p>
-
-            </div>
-
-            <div class="news-arrow">
-              →
-            </div>
-
-          </article>
-
-
-          <article class="news-card">
-
-            <div class="news-date">
-              <span>03</span>
-              <small>OCT</small>
-            </div>
-
-            <div class="news-body">
-
-              <div class="news-tag">
-                BATTLE
-              </div>
-
-              <h3>
-                本週陀螺爭霸排行榜更新
-              </h3>
-
-              <p>
-                誰會登上本週排行榜第一名？
-              </p>
-
-            </div>
-
-            <div class="news-arrow">
-              →
-            </div>
-
-          </article>
-
-
-          <article class="news-card">
-
-            <div class="news-date">
-              <span>01</span>
-              <small>OCT</small>
-            </div>
-
-            <div class="news-body">
-
-              <div class="news-tag">
-                STORE
-              </div>
-
-              <h3>
-                窩室最新商品與活動資訊
-              </h3>
-
-              <p>
-                更多新品與活動消息陸續公開。
-              </p>
-
-            </div>
-
-            <div class="news-arrow">
-              →
-            </div>
-
-          </article>
-
-        </div>
+        <div id="newsList" class="news-list"></div>
 
       </div>
 
 
-      <!-- 聯絡我們 -->
-      <div class="section-block">
+      <!-- 聯絡我們（網址在 app.js 的 SITE_LINKS 設定） -->
+      <div id="contact" class="section-block">
 
         <div class="contact-section">
 
           <div class="contact-title">
-
-            <div class="section-kicker">
-              CONTACT
-            </div>
-
-            <h2>
-              聯絡我們
-            </h2>
-
-            <p>
-              想參加比賽、組建戰隊或了解更多窩室活動？
-            </p>
-
+            <div class="section-kicker">CONTACT</div>
+            <h2>聯絡我們</h2>
+            <p>想參加比賽、組建戰隊或了解更多窩室活動？</p>
           </div>
-
 
           <div class="contact-buttons">
 
-            <a
-              href="#"
-              class="contact-button"
-            >
+            <a id="contactLine" href="#" class="contact-button">
               <span>LINE</span>
               <strong>→</strong>
             </a>
 
-            <a
-              href="#"
-              class="contact-button"
-            >
+            <a id="contactFacebook" href="#" class="contact-button">
               <span>FACEBOOK</span>
               <strong>→</strong>
             </a>
 
-            <a
-              href="#"
-              class="contact-button"
-            >
+            <a id="contactInstagram" href="#" class="contact-button">
               <span>INSTAGRAM</span>
               <strong>→</strong>
             </a>
@@ -584,825 +296,106 @@
     </section>
 
 
-
     <!-- ======================================
          戰隊聯賽
     ======================================= -->
 
-    <section
-      id="page-league"
-      class="page"
-      data-page-content="league"
-    >
+    <section id="page-league" class="page" data-page-content="league">
 
       <div class="page-hero">
-
-        <div class="hero-tag">
-          OURSPACE / TEAM LEAGUE
-        </div>
-
+        <div class="hero-tag">OURSPACE / TEAM LEAGUE</div>
         <h1>
           戰隊
           <strong>聯賽</strong>
         </h1>
-
-        <p>
-          TEAM BATTLE LEAGUE
-        </p>
-
+        <p>TEAM BATTLE LEAGUE</p>
       </div>
 
+      <div
+        id="leagueDateTabs"
+        class="league-date-tabs"
+        role="tablist"
+        aria-label="比賽日"
+      ></div>
 
-      <!-- 日期 -->
-      <div class="league-date-panel">
-
-        <div class="date-label">
-          MATCH DAY
-        </div>
-
-        <div class="date-value">
-          2026 / 10 / 18
-        </div>
-
-        <div class="date-time">
-          19:00 — 24:00
-        </div>
-
+      <div id="leagueDatePanel" class="league-date-panel">
+        <div id="leagueDateLabel" class="date-label">MATCH DAY</div>
+        <div id="leagueDateValue" class="date-value">—</div>
+        <div id="leagueDateTime" class="date-time"></div>
       </div>
 
-
-      <!-- 比賽列表 -->
-      <div class="match-list">
-
-        <!-- 比賽 1 -->
-        <article class="match-card finished">
-
-          <div class="match-time">
-            <span>20:00</span>
-            <small>FINISHED</small>
-          </div>
-
-
-          <div class="match-teams">
-
-            <div class="team team-a">
-
-              <div class="team-logo">
-                A
-              </div>
-
-              <div class="team-name">
-                戰隊 C
-              </div>
-
-            </div>
-
-
-            <div class="match-score">
-
-              <strong>
-                5 : 4
-              </strong>
-
-              <span>
-                戰隊 C 勝利
-              </span>
-
-            </div>
-
-
-            <div class="team team-b">
-
-              <div class="team-logo">
-                D
-              </div>
-
-              <div class="team-name">
-                戰隊 D
-              </div>
-
-            </div>
-
-          </div>
-
-        </article>
-
-
-        <!-- 比賽 2 -->
-        <article class="match-card finished">
-
-          <div class="match-time">
-            <span>21:30</span>
-            <small>FINISHED</small>
-          </div>
-
-
-          <div class="match-teams">
-
-            <div class="team team-a">
-
-              <div class="team-logo">
-                A
-              </div>
-
-              <div class="team-name">
-                戰隊 A
-              </div>
-
-            </div>
-
-
-            <div class="match-score">
-
-              <strong>
-                2 : 3
-              </strong>
-
-              <span>
-                戰隊 B 勝利
-              </span>
-
-            </div>
-
-
-            <div class="team team-b">
-
-              <div class="team-logo">
-                B
-              </div>
-
-              <div class="team-name">
-                戰隊 B
-              </div>
-
-            </div>
-
-          </div>
-
-        </article>
-
-
-        <!-- 比賽 3 -->
-        <article class="match-card upcoming">
-
-          <div class="match-time">
-            <span>23:00</span>
-            <small>UPCOMING</small>
-          </div>
-
-
-          <div class="match-teams">
-
-            <div class="team team-a">
-
-              <div class="team-logo">
-                E
-              </div>
-
-              <div class="team-name">
-                戰隊 E
-              </div>
-
-            </div>
-
-
-            <div class="match-score">
-
-              <strong>
-                VS
-              </strong>
-
-              <span>
-                未開賽
-              </span>
-
-            </div>
-
-
-            <div class="team team-b">
-
-              <div class="team-logo">
-                F
-              </div>
-
-              <div class="team-name">
-                戰隊 F
-              </div>
-
-            </div>
-
-          </div>
-
-        </article>
-
-      </div>
+      <div id="matchList" class="match-list"></div>
 
     </section>
-
 
 
     <!-- ======================================
          陀螺爭霸
     ======================================= -->
 
-    <section
-      id="page-ranking"
-      class="page"
-      data-page-content="ranking"
-    >
+    <section id="page-ranking" class="page" data-page-content="ranking">
 
       <div class="page-hero">
-
-        <div class="hero-tag">
-          OURSPACE / RANKING
-        </div>
-
+        <div class="hero-tag">OURSPACE / RANKING</div>
         <h1>
           陀螺
           <strong>爭霸</strong>
         </h1>
-
-        <p>
-          TOP SPINNERS
-        </p>
-
+        <p>TOP SPINNERS</p>
       </div>
-
 
       <div class="ranking-header">
-
         <div>
-          <div class="section-kicker">
-            WEEKLY RANKING
-          </div>
-
-          <h2>
-            上位排行榜
-          </h2>
+          <div class="section-kicker">SEASON RANKING</div>
+          <h2>上位排行榜</h2>
         </div>
-
-        <div class="ranking-season">
-          SEASON 01
-        </div>
-
+        <div id="rankingSeason" class="ranking-season">SEASON</div>
       </div>
 
-
-      <!-- 第一名 -->
-      <article class="ranking-card rank-1">
-
-        <div class="rank-number">
-          01
-        </div>
-
-        <div class="rank-crown">
-          ♛
-        </div>
-
-        <div class="rank-avatar">
-          1
-        </div>
-
-        <div class="rank-info">
-
-          <div class="rank-label">
-            CHAMPION
-          </div>
-
-          <h2>
-            玩家 A
-          </h2>
-
-          <div class="rank-count">
-            <strong>28</strong>
-            <span>上位</span>
-          </div>
-
-        </div>
-
-        <div class="rank-badge">
-          GOLD
-        </div>
-
-      </article>
-
-
-      <!-- 第二名 -->
-      <article class="ranking-card rank-2">
-
-        <div class="rank-number">
-          02
-        </div>
-
-        <div class="rank-avatar">
-          2
-        </div>
-
-        <div class="rank-info">
-
-          <div class="rank-label">
-            RUNNER UP
-          </div>
-
-          <h2>
-            玩家 B
-          </h2>
-
-          <div class="rank-count">
-            <strong>21</strong>
-            <span>上位</span>
-          </div>
-
-        </div>
-
-        <div class="rank-badge">
-          SILVER
-        </div>
-
-      </article>
-
-
-      <!-- 第三名 -->
-      <article class="ranking-card rank-3">
-
-        <div class="rank-number">
-          03
-        </div>
-
-        <div class="rank-avatar">
-          3
-        </div>
-
-        <div class="rank-info">
-
-          <div class="rank-label">
-            TOP 3
-          </div>
-
-          <h2>
-            玩家 C
-          </h2>
-
-          <div class="rank-count">
-            <strong>18</strong>
-            <span>上位</span>
-          </div>
-
-        </div>
-
-        <div class="rank-badge">
-          BRONZE
-        </div>
-
-      </article>
-
-
-      <!-- 第四名 -->
-      <div class="ranking-list">
-
-        <article class="ranking-card rank-normal">
-
-          <div class="rank-number">
-            04
-          </div>
-
-          <div class="rank-avatar">
-            4
-          </div>
-
-          <div class="rank-info">
-
-            <h3>
-              玩家 D
-            </h3>
-
-            <div class="rank-count">
-              <strong>15</strong>
-              <span>上位</span>
-            </div>
-
-          </div>
-
-          <div class="rank-badge">
-            IRON
-          </div>
-
-        </article>
-
-
-        <article class="ranking-card rank-normal">
-
-          <div class="rank-number">
-            05
-          </div>
-
-          <div class="rank-avatar">
-            5
-          </div>
-
-          <div class="rank-info">
-
-            <h3>
-              玩家 E
-            </h3>
-
-            <div class="rank-count">
-              <strong>13</strong>
-              <span>上位</span>
-            </div>
-
-          </div>
-
-          <div class="rank-badge">
-            IRON
-          </div>
-
-        </article>
-
-
-        <article class="ranking-card rank-normal">
-
-          <div class="rank-number">
-            06
-          </div>
-
-          <div class="rank-avatar">
-            6
-          </div>
-
-          <div class="rank-info">
-
-            <h3>
-              玩家 F
-            </h3>
-
-            <div class="rank-count">
-              <strong>11</strong>
-              <span>上位</span>
-            </div>
-
-          </div>
-
-          <div class="rank-badge">
-            IRON
-          </div>
-
-        </article>
-
-
-        <article class="ranking-card rank-normal">
-
-          <div class="rank-number">
-            07
-          </div>
-
-          <div class="rank-avatar">
-            7
-          </div>
-
-          <div class="rank-info">
-
-            <h3>
-              玩家 G
-            </h3>
-
-            <div class="rank-count">
-              <strong>10</strong>
-              <span>上位</span>
-            </div>
-
-          </div>
-
-          <div class="rank-badge">
-            IRON
-          </div>
-
-        </article>
-
-
-        <article class="ranking-card rank-normal">
-
-          <div class="rank-number">
-            08
-          </div>
-
-          <div class="rank-avatar">
-            8
-          </div>
-
-          <div class="rank-info">
-
-            <h3>
-              玩家 H
-            </h3>
-
-            <div class="rank-count">
-              <strong>9</strong>
-              <span>上位</span>
-            </div>
-
-          </div>
-
-          <div class="rank-badge">
-            IRON
-          </div>
-
-        </article>
-
-
-        <article class="ranking-card rank-normal">
-
-          <div class="rank-number">
-            09
-          </div>
-
-          <div class="rank-avatar">
-            9
-          </div>
-
-          <div class="rank-info">
-
-            <h3>
-              玩家 I
-            </h3>
-
-            <div class="rank-count">
-              <strong>8</strong>
-              <span>上位</span>
-            </div>
-
-          </div>
-
-          <div class="rank-badge">
-            IRON
-          </div>
-
-        </article>
-
-
-        <article class="ranking-card rank-normal">
-
-          <div class="rank-number">
-            10
-          </div>
-
-          <div class="rank-avatar">
-            10
-          </div>
-
-          <div class="rank-info">
-
-            <h3>
-              玩家 J
-            </h3>
-
-            <div class="rank-count">
-              <strong>7</strong>
-              <span>上位</span>
-            </div>
-
-          </div>
-
-          <div class="rank-badge">
-            IRON
-          </div>
-
-        </article>
-
-      </div>
+      <div id="rankingBoard" class="ranking-board"></div>
 
     </section>
-
 
 
     <!-- ======================================
          賽事報名
     ======================================= -->
 
-    <section
-      id="page-tournaments"
-      class="page"
-      data-page-content="tournaments"
-    >
+    <section id="page-tournaments" class="page" data-page-content="tournaments">
 
       <div class="page-hero">
-
-        <div class="hero-tag">
-          OURSPACE / EVENTS
-        </div>
-
+        <div class="hero-tag">OURSPACE / EVENTS</div>
         <h1>
           賽事
           <strong>報名</strong>
         </h1>
-
-        <p>
-          JOIN THE BATTLE
-        </p>
-
+        <p>JOIN THE BATTLE</p>
       </div>
 
-
-      <!-- 搜尋 -->
       <div class="tournament-search">
 
-        <div class="search-title">
-          SEARCH EVENT
-        </div>
+        <label class="search-title" for="tournamentSearch">SEARCH EVENT</label>
 
         <div class="search-box">
-
-          <span class="search-icon">
-            ⌕
-          </span>
-
+          <span class="search-icon">⌕</span>
           <input
             id="tournamentSearch"
             type="search"
-            placeholder="搜尋賽事名稱..."
+            placeholder="搜尋賽事名稱、地點…"
+            autocomplete="off"
           >
-
         </div>
-
 
         <div class="filter-buttons">
-
-          <button
-            class="filter-button active"
-            type="button"
-            data-filter="all"
-          >
-            全部
-          </button>
-
-          <button
-            class="filter-button"
-            type="button"
-            data-filter="team"
-          >
-            戰隊賽
-          </button>
-
-          <button
-            class="filter-button"
-            type="button"
-            data-filter="solo"
-          >
-            個人賽
-          </button>
-
+          <button class="filter-button active" type="button" data-filter="all">全部</button>
+          <button class="filter-button" type="button" data-filter="open">報名中</button>
+          <button class="filter-button" type="button" data-filter="team">戰隊賽</button>
+          <button class="filter-button" type="button" data-filter="solo">個人賽</button>
         </div>
 
       </div>
 
-
-      <!-- 賽事清單 -->
-      <div class="tournament-list">
-
-
-        <article
-          class="tournament-card"
-          data-type="team"
-          data-name="2026 窩室秋季戰隊聯賽"
-        >
-
-          <div class="tournament-image">
-            <span>⚔</span>
-          </div>
-
-          <div class="tournament-content">
-
-            <div class="tournament-tag">
-              TEAM BATTLE
-            </div>
-
-            <h2>
-              2026 窩室秋季戰隊聯賽
-            </h2>
-
-            <div class="tournament-info">
-
-              <span>
-                📅 2026 / 10 / 18
-              </span>
-
-              <span>
-                ⏰ 19:00
-              </span>
-
-              <span>
-                👥 戰隊賽
-              </span>
-
-            </div>
-
-            <button
-              class="primary-button tournament-button"
-              type="button"
-            >
-              <span>查看賽事</span>
-              <strong>→</strong>
-            </button>
-
-          </div>
-
-        </article>
-
-
-        <article
-          class="tournament-card"
-          data-type="solo"
-          data-name="窩室陀螺爭霸 #12"
-        >
-
-          <div class="tournament-image">
-            <span>◈</span>
-          </div>
-
-          <div class="tournament-content">
-
-            <div class="tournament-tag">
-              SOLO BATTLE
-            </div>
-
-            <h2>
-              窩室陀螺爭霸 #12
-            </h2>
-
-            <div class="tournament-info">
-
-              <span>
-                📅 2026 / 10 / 25
-              </span>
-
-              <span>
-                ⏰ 14:00
-              </span>
-
-              <span>
-                👤 個人賽
-              </span>
-
-            </div>
-
-            <button
-              class="primary-button tournament-button"
-              type="button"
-            >
-              <span>查看賽事</span>
-              <strong>→</strong>
-            </button>
-
-          </div>
-
-        </article>
-
-
-        <article
-          class="tournament-card"
-          data-type="team"
-          data-name="窩室冬季戰隊聯賽"
-        >
-
-          <div class="tournament-image">
-            <span>⚡</span>
-          </div>
-
-          <div class="tournament-content">
-
-            <div class="tournament-tag">
-              COMING SOON
-            </div>
-
-            <h2>
-              窩室冬季戰隊聯賽
-            </h2>
-
-            <div class="tournament-info">
-
-              <span>
-                📅 即將公布
-              </span>
-
-              <span>
-                ⚔ TEAM
-              </span>
-
-            </div>
-
-            <button
-              class="secondary-button tournament-button"
-              type="button"
-            >
-              <span>即將開放</span>
-            </button>
-
-          </div>
-
-        </article>
-
-
-      </div>
+      <div id="tournamentList" class="tournament-list"></div>
 
     </section>
 
@@ -1414,21 +407,34 @@
   ========================================= -->
 
   <footer class="site-footer">
-
-    <div>
-      OURSPACE
-    </div>
-
-    <span>
-      © 窩室
-    </span>
-
+    <div>OURSPACE</div>
+    <span>© <span id="footerYear">2026</span> Luna 窩室</span>
   </footer>
 
 
   <!-- ========================================
-       JavaScript
+       詳情視窗（公告 / 賽事共用）
   ========================================= -->
+
+  <div id="detailModal" class="modal" hidden>
+    <div class="modal-backdrop" data-modal-close></div>
+    <div
+      class="modal-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modalTitle"
+    >
+      <button
+        id="modalCloseButton"
+        class="modal-close"
+        type="button"
+        data-modal-close
+        aria-label="關閉"
+      >×</button>
+      <div id="modalBody" class="modal-body"></div>
+    </div>
+  </div>
+
 
   <script src="/js/app.js"></script>
 
