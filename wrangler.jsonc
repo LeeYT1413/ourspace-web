@@ -1,0 +1,22 @@
+
+{
+  "name": "ourspace-web",
+
+  "main": "src/worker.js",
+
+  "compatibility_date": "2026-10-05",
+
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "ourspace-erp-db",
+      "database_id": "cade1a10-97e1-49df-9ce6-bf7b670d1611",
+      "migrations_dir": "migrations"
+    }
+  ]
+}
