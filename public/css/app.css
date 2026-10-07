@@ -1408,9 +1408,20 @@ body.sidebar-collapsed .main-content {
   object-fit: cover;
 }
 
+.team-text {
+  min-width: 0;
+}
+
 .team-name {
   font-size: 21px;
   font-weight: 900;
+}
+
+/* 個人賽：選手名稱下方的所屬戰隊 */
+.team-sub {
+  margin-top: 2px;
+  color: var(--text-dark);
+  font-size: 16px;
 }
 
 .team.is-winner .team-name {

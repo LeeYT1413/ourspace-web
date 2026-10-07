@@ -23,11 +23,15 @@ var MATCH_SELECT =
   "lm.score_a, lm.score_b, lm.status, lm.field_name, lm.note, " +
   "lm.team_a_id, ta.team_name AS team_a_name, " +
   "lm.team_b_id, tb.team_name AS team_b_name, " +
+  "lm.player_a_id, COALESCE(NULLIF(pa.nickname, ''), pa.player_name) AS player_a_name, " +
+  "lm.player_b_id, COALESCE(NULLIF(pb.nickname, ''), pb.player_name) AS player_b_name, " +
   "lm.winner_team_id, lm.updated_at " +
   "FROM league_matches lm " +
   "LEFT JOIN tournaments t ON lm.tournament_id = t.id " +
   "LEFT JOIN teams ta ON lm.team_a_id = ta.id " +
-  "LEFT JOIN teams tb ON lm.team_b_id = tb.id ";
+  "LEFT JOIN teams tb ON lm.team_b_id = tb.id " +
+  "LEFT JOIN players pa ON lm.player_a_id = pa.id " +
+  "LEFT JOIN players pb ON lm.player_b_id = pb.id ";
 
 
 /* 依比分判定勝方（平手 = NULL） */

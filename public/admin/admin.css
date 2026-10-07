@@ -735,6 +735,121 @@ a {
 
 
 /* =========================================================
+   可搜尋下拉 / 選手上位紀錄
+========================================================= */
+
+.field-search {
+  margin-bottom: 6px;
+}
+
+.panel-note {
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.sub-section {
+  gap: 12px;
+
+  margin-top: 8px;
+  padding-top: 18px;
+
+  border-top: 1px solid var(--line-bright);
+}
+
+.sub-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sub-title {
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.sub-count {
+  color: var(--yellow);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.placement-add {
+  display: grid;
+  grid-template-columns: 1.3fr 2fr 0.9fr 0.9fr;
+  gap: 8px;
+
+  padding: 12px;
+
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+}
+
+.mini-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  min-width: 0;
+}
+
+.mini-field span {
+  color: var(--text-dark);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.placement-add-button {
+  grid-column: 1 / -1;
+}
+
+.placement-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.placement-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  padding: 10px 2px;
+
+  border-bottom: 1px solid var(--line);
+}
+
+.placement-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  min-width: 0;
+}
+
+.placement-info strong {
+  overflow: hidden;
+
+  font-size: 15px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.placement-info span {
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.placement-empty {
+  padding: 16px 0;
+
+  color: var(--text-dark);
+  font-size: 13px;
+  text-align: center;
+}
+
+
+/* =========================================================
    Toast
 ========================================================= */
 
@@ -890,6 +1005,19 @@ a {
   border-top: 1px solid var(--line);
 }
 
+.ref-team-label {
+  min-width: 0;
+}
+
+.ref-team-sub {
+  overflow: hidden;
+
+  color: var(--text-dark);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .ref-team-name {
   min-width: 0;
   overflow: hidden;
@@ -1041,6 +1169,15 @@ a {
   .panel-body .field-half,
   .panel-body .field-third {
     flex-basis: 100%;
+  }
+
+  .placement-add {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .mini-field-wide {
+    grid-column: 1 / -1;
+    order: -1;
   }
 
 }

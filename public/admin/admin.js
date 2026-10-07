@@ -69,6 +69,11 @@
     SCORE_LIMIT: "兩隊比分加總已達 9 分上限。",
     SCORE_OVER_LIMIT: "兩隊比分加總不能超過 9 分。",
     SCORE_NOT_COMPLETE: "兩隊比分加總要剛好 9 分才能結束比賽。",
+    SAME_PLAYER: "A 選手和 B 選手不能是同一人。",
+    SAME_TEAM_PLAYERS: "兩位選手屬於同一個戰隊，積分無法計入，請重新選擇。",
+    PLAYER_NO_TEAM: "選手還沒有所屬戰隊，積分無法計入。請先到「選手」設定所屬戰隊。",
+    INVALID_DATE: "請輸入完整的日期。",
+    PLACEMENT_OVER_COUNT: "名次不能大於參賽人數。",
     INVALID_MATCH_STATE: "比賽狀態已被其他人更新，畫面已重新整理。",
     DATABASE_NOT_READY: "資料庫還沒建立後台資料表，請先執行 migration。",
     NETWORK_ERROR: "連線失敗，請檢查網路後再試。"
@@ -86,13 +91,13 @@
       itemName: "比賽",
       endpoint: "/api/admin/league_matches",
       refreshLookups: false,
-      hint: "比賽當天的比分建議由裁判在「裁判計分」更新。勝方與積分會依比分自動計算。",
+      hint: "個人賽選選手，積分計入選手所屬的戰隊；其他賽別選戰隊。比分建議由裁判在「裁判計分」更新。",
       columns: [
         { label: "時間", value: function (r) { return r.scheduled_at; } },
         { label: "賽事", value: function (r) { return refLabel("tournaments", r.tournament_id); } },
         { label: "賽別", value: function (r) { return enumLabel("matchFormat", r.match_format); } },
         { label: "輪次", value: function (r) { return r.round_number ? "R" + r.round_number : ""; } },
-        { label: "對戰", value: function (r) { return refLabel("teams", r.team_a_id) + " vs " + refLabel("teams", r.team_b_id); } },
+        { label: "對戰", value: function (r) { return sideLabel(r, "a") + " vs " + sideLabel(r, "b"); } },
         { label: "比分", value: function (r) { return r.score_a === null ? "" : r.score_a + " : " + r.score_b; } },
         { label: "狀態", value: function (r) { return enumLabel("matchStatus", r.status); }, badge: "status" }
       ],
@@ -102,10 +107,12 @@
         { name: "scheduled_at", label: "比賽時間", type: "datetime", required: true, half: true },
         { name: "round_number", label: "第幾輪", type: "number", half: true },
         { name: "match_number", label: "第幾場", type: "number", half: true },
-        { name: "team_a_id", label: "A 隊", type: "ref", ref: "teams", half: true },
-        { name: "team_b_id", label: "B 隊", type: "ref", ref: "teams", half: true },
-        { name: "score_a", label: "A 隊分數", type: "number", half: true },
-        { name: "score_b", label: "B 隊分數", type: "number", half: true, help: "兩隊加總最多 9 分，結束時要剛好 9 分" },
+        { name: "player_a_id", label: "A 選手", type: "ref", ref: "players", half: true, searchable: true, showWhen: { field: "match_format", values: ["solo"] } },
+        { name: "player_b_id", label: "B 選手", type: "ref", ref: "players", half: true, searchable: true, showWhen: { field: "match_format", values: ["solo"] }, help: "積分計入選手所屬的戰隊" },
+        { name: "team_a_id", label: "A 隊", type: "ref", ref: "teams", half: true, showWhen: { field: "match_format", values: ["duo", "trio", "team"] } },
+        { name: "team_b_id", label: "B 隊", type: "ref", ref: "teams", half: true, showWhen: { field: "match_format", values: ["duo", "trio", "team"] } },
+        { name: "score_a", label: "A 分數", type: "number", half: true },
+        { name: "score_b", label: "B 分數", type: "number", half: true, help: "兩邊加總最多 9 分，結束時要剛好 9 分" },
         { name: "status", label: "狀態", type: "select", options: "matchStatus", default: "scheduled" },
         { name: "field_name", label: "場地", type: "text", placeholder: "例：A 場" },
         { name: "note", label: "備註", type: "text", help: "會顯示在官網比分下方。" }
@@ -167,10 +174,13 @@
       itemName: "選手",
       endpoint: "/api/admin/players",
       refreshLookups: true,
+      extraPanel: "placements",
+      hint: "點選選手可以新增上位紀錄，官網「陀螺爭霸」會依上位次數自動排名。",
       columns: [
         { label: "名稱", value: function (r) { return r.player_name; } },
         { label: "暱稱", value: function (r) { return r.nickname || ""; } },
         { label: "戰隊", value: function (r) { return r.team_id ? refLabel("teams", r.team_id) : ""; } },
+        { label: "上位", value: function (r) { return r.upper_count || 0; } },
         { label: "狀態", value: function (r) { return enumLabel("activeStatus", r.status); }, badge: "status" }
       ],
       fields: [
@@ -179,30 +189,6 @@
         { name: "team_id", label: "所屬戰隊", type: "ref", ref: "teams", half: true },
         { name: "status", label: "狀態", type: "select", options: "activeStatus", default: "active", half: true },
         { name: "avatar_url", label: "頭像圖片網址", type: "url" }
-      ]
-    },
-
-    player_ranking: {
-      label: "排行榜",
-      itemName: "排名",
-      endpoint: "/api/admin/player_ranking",
-      refreshLookups: false,
-      hint: "官網顯示「最近更新的賽季」的前 10 名。",
-      columns: [
-        { label: "賽季", value: function (r) { return r.season_name; } },
-        { label: "名次", value: function (r) { return r.rank_number; } },
-        { label: "選手", value: function (r) { return refLabel("players", r.player_id); } },
-        { label: "上位", value: function (r) { return r.upper_count; } },
-        { label: "勝場", value: function (r) { return r.win_count; } },
-        { label: "積分", value: function (r) { return r.points; } }
-      ],
-      fields: [
-        { name: "season_name", label: "賽季名稱", type: "text", required: true, placeholder: "例：2026 Season 01", half: true },
-        { name: "rank_number", label: "名次", type: "number", required: true, half: true },
-        { name: "player_id", label: "選手", type: "ref", ref: "players", required: true },
-        { name: "upper_count", label: "上位次數", type: "number", default: 0, third: true },
-        { name: "win_count", label: "勝場", type: "number", default: 0, third: true },
-        { name: "points", label: "積分", type: "number", default: 0, third: true }
       ]
     },
 
@@ -303,7 +289,6 @@
     { id: "tournaments", label: "賽事", roles: ["admin"] },
     { id: "teams", label: "戰隊", roles: ["admin"] },
     { id: "players", label: "選手", roles: ["admin"] },
-    { id: "player_ranking", label: "排行榜", roles: ["admin"] },
     { id: "news", label: "公告", roles: ["admin"] },
     { id: "news_images", label: "輪播照片", roles: ["admin"] },
     { id: "contact_messages", label: "聯絡訊息", roles: ["admin"] },
@@ -319,7 +304,8 @@
     staff: null,
     lookups: { teams: [], tournaments: [], players: [] },
     currentTab: null,
-    records: {}
+    records: {},
+    placementsChanged: false
   };
 
 
@@ -403,11 +389,63 @@
         return [String(item.id), item.title];
       }
 
-      return [
-        String(item.id),
-        item.nickname ? item.player_name + "（" + item.nickname + "）" : item.player_name
-      ];
+      return [String(item.id), playerOptionLabel(item)];
     });
+  }
+
+
+  function teamNameById(id) {
+
+    var teams = state.lookups.teams || [];
+
+    for (var i = 0; i < teams.length; i++) {
+      if (teams[i].id === id) {
+        return teams[i].team_name;
+      }
+    }
+
+    return "";
+  }
+
+
+  /* 選手下拉選單：暱稱（本名）— 戰隊 */
+  function playerOptionLabel(item) {
+
+    var name = item.nickname
+      ? item.nickname + "（" + item.player_name + "）"
+      : item.player_name;
+
+    var team = item.team_id ? teamNameById(item.team_id) : "";
+
+    return name + (team ? " — " + team : "（無戰隊）");
+  }
+
+
+  /* 選手顯示名稱：有暱稱用暱稱 */
+  function playerName(id) {
+
+    var players = state.lookups.players || [];
+
+    for (var i = 0; i < players.length; i++) {
+      if (String(players[i].id) === String(id)) {
+        return players[i].nickname || players[i].player_name;
+      }
+    }
+
+    return "#" + id;
+  }
+
+
+  /* 賽程列表的對戰方：個人賽顯示選手，其他顯示戰隊 */
+  function sideLabel(record, side) {
+
+    var playerId = record["player_" + side + "_id"];
+
+    if (record.match_format === "solo" && playerId) {
+      return playerName(playerId);
+    }
+
+    return refLabel("teams", record["team_" + side + "_id"]);
   }
 
 
@@ -980,6 +1018,16 @@
       formFields.appendChild(createField(field, value, isCreate));
     });
 
+    applyVisibility(config);
+
+    if (config.extraPanel === "placements") {
+      formFields.appendChild(
+        record
+          ? createPlacementsSection(record)
+          : el("p", "field panel-note", "儲存選手後，再點選這位選手就可以新增上位紀錄。")
+      );
+    }
+
     deleteButton.hidden = isCreate;
 
     panel.hidden = false;
@@ -1002,6 +1050,72 @@
     panel.hidden = true;
     document.body.classList.remove("panel-open");
     formContext = null;
+
+    /* 上位紀錄有變動：重新整理選手列表的上位次數 */
+    if (state.placementsChanged) {
+
+      state.placementsChanged = false;
+
+      if (state.staff && state.currentTab === "players") {
+        renderResourceView("players");
+      }
+    }
+  }
+
+
+  /* 依其他欄位的值顯示 / 隱藏欄位（例如賽別決定選選手或選戰隊） */
+  function applyVisibility(config) {
+
+    config.fields.forEach(function (field) {
+
+      if (!field.showWhen) {
+        return;
+      }
+
+      var wrapper = formFields.querySelector('[data-field="' + field.name + '"]');
+      var control = recordForm.elements[field.showWhen.field];
+
+      if (!wrapper || !control) {
+        return;
+      }
+
+      wrapper.hidden = field.showWhen.values.indexOf(control.value) === -1;
+    });
+  }
+
+
+  /* 可搜尋的下拉選單：依關鍵字重建選項，保留目前選取的值 */
+  function filterSelect(select, options, keyword, field) {
+
+    var current = select.value;
+    var text = String(keyword || "").trim().toLowerCase();
+
+    var matched = options.filter(function (option) {
+      return !text || option[1].toLowerCase().indexOf(text) !== -1 || option[0] === current;
+    });
+
+    clear(select);
+
+    var empty = el(
+      "option",
+      null,
+      text ? "— 找到 " + matched.length + " 筆 —" : (field.required ? "— 請選擇 —" : "— 未選擇 —")
+    );
+    empty.value = "";
+    select.appendChild(empty);
+
+    matched.forEach(function (option) {
+      var node = el("option", null, option[1]);
+      node.value = option[0];
+      select.appendChild(node);
+    });
+
+    select.value = current;
+
+    /* 只剩一筆符合就直接選起來 */
+    if (text && !current && matched.length === 1) {
+      select.value = matched[0][0];
+    }
   }
 
 
@@ -1032,9 +1146,11 @@
 
   function createField(field, value, isCreate) {
 
-    var wrapper = el("label", fieldClass(field));
+    /* 可搜尋的欄位有兩個輸入框，外層不能用 label */
+    var wrapper = el(field.searchable ? "div" : "label", fieldClass(field));
     var required = field.required || (field.requiredOnCreate && isCreate);
 
+    wrapper.setAttribute("data-field", field.name);
     wrapper.appendChild(el("span", "field-label", field.label + (required ? " *" : "")));
 
     var input;
@@ -1060,6 +1176,30 @@
       });
 
       input.value = value === null || value === undefined ? "" : String(value);
+
+      if (field.searchable) {
+
+        var search = el("input", "field-search");
+        var select = input;
+        var allOptions = options;
+
+        search.type = "search";
+        search.placeholder = "輸入名稱、暱稱或戰隊搜尋";
+        search.setAttribute("aria-label", field.label + " 搜尋");
+
+        search.addEventListener("input", function () {
+          filterSelect(select, allOptions, search.value, field);
+        });
+
+        /* 搜尋框按 Enter 不要送出整張表單 */
+        search.addEventListener("keydown", function (event) {
+          if (event.key === "Enter") {
+            event.preventDefault();
+          }
+        });
+
+        wrapper.appendChild(search);
+      }
 
     } else if (field.type === "textarea") {
 
@@ -1128,6 +1268,13 @@
       var input = recordForm.elements[field.name];
 
       if (!input) {
+        return;
+      }
+
+      /* 隱藏的欄位不送出（例如個人賽時的戰隊欄位） */
+      var wrapper = formFields.querySelector('[data-field="' + field.name + '"]');
+
+      if (wrapper && wrapper.hidden) {
         return;
       }
 
@@ -1222,6 +1369,214 @@
         setBusy(recordForm, false);
       });
   });
+
+
+  /* 改變賽別等欄位時，切換要顯示的欄位 */
+  recordForm.addEventListener("change", function () {
+
+    if (formContext) {
+      applyVisibility(RESOURCES[formContext.resourceId]);
+    }
+  });
+
+
+  /* =======================================================
+     09-2. 選手上位紀錄
+  ======================================================= */
+
+  function localToday() {
+
+    var now = new Date();
+
+    return now.getFullYear() + "-" + pad2(now.getMonth() + 1) + "-" + pad2(now.getDate());
+  }
+
+
+  function miniField(type, label) {
+
+    var wrap = el("label", "mini-field");
+    var input = el("input");
+
+    input.type = type;
+
+    if (type === "number") {
+      input.inputMode = "numeric";
+      input.step = "1";
+      input.min = "1";
+    }
+
+    wrap.appendChild(el("span", null, label));
+    wrap.appendChild(input);
+
+    return { wrap: wrap, input: input };
+  }
+
+
+  function createPlacementsSection(player) {
+
+    var section = el("div", "field sub-section");
+
+    var head = el("div", "sub-head");
+    head.appendChild(el("span", "sub-title", "上位紀錄"));
+
+    var countNode = el("span", "sub-count", "");
+    head.appendChild(countNode);
+
+    section.appendChild(head);
+
+
+    /* 新增列 */
+    var addBox = el("div", "placement-add");
+
+    var dateField = miniField("date", "日期");
+    var nameField = miniField("text", "比賽名稱");
+    var totalField = miniField("number", "人數");
+    var rankField = miniField("number", "第幾名");
+
+    dateField.input.value = localToday();
+    nameField.input.maxLength = 100;
+    nameField.wrap.classList.add("mini-field-wide");
+
+    [dateField, nameField, totalField, rankField].forEach(function (item) {
+
+      addBox.appendChild(item.wrap);
+
+      /* 在這裡按 Enter = 新增紀錄，不是儲存選手 */
+      item.input.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          add();
+        }
+      });
+    });
+
+    var addButton = button("新增上位紀錄", "btn btn-primary placement-add-button", add);
+    addBox.appendChild(addButton);
+
+    section.appendChild(addBox);
+
+
+    /* 紀錄列表 */
+    var list = el("div", "placement-list");
+    list.appendChild(el("p", "placement-empty", "載入中…"));
+    section.appendChild(list);
+
+
+    var FIELD_LABELS = {
+      event_date: "日期",
+      event_name: "比賽名稱",
+      participant_count: "人數",
+      placement: "第幾名"
+    };
+
+
+    function load() {
+
+      api("GET", "/api/admin/player_placements?player_id=" + player.id)
+        .then(function (response) {
+          render(response.data || []);
+        })
+        .catch(function (error) {
+          clear(list);
+          list.appendChild(el("p", "placement-empty", errorText(error)));
+        });
+    }
+
+
+    function render(rows) {
+
+      countNode.textContent = "共 " + rows.length + " 次上位";
+
+      clear(list);
+
+      if (!rows.length) {
+        list.appendChild(el("p", "placement-empty", "還沒有上位紀錄。"));
+        return;
+      }
+
+      rows.forEach(function (row) {
+
+        var item = el("div", "placement-row");
+        var info = el("div", "placement-info");
+
+        info.appendChild(el("strong", null, row.event_name));
+        info.appendChild(
+          el(
+            "span",
+            null,
+            String(row.event_date).replace(/-/g, "/") + "　" +
+            row.participant_count + " 人　第 " + row.placement + " 名"
+          )
+        );
+
+        item.appendChild(info);
+
+        item.appendChild(
+          button("刪除", "btn btn-ghost btn-small", function () {
+
+            if (!window.confirm("確定刪除「" + row.event_name + "」這筆上位紀錄？")) {
+              return;
+            }
+
+            api("DELETE", "/api/admin/player_placements/" + row.id)
+              .then(function () {
+                state.placementsChanged = true;
+                toast("已刪除上位紀錄。", "success");
+                load();
+              })
+              .catch(function (error) {
+                toast(errorText(error), "error");
+              });
+          })
+        );
+
+        list.appendChild(item);
+      });
+    }
+
+
+    function add() {
+
+      if (addButton.disabled) {
+        return;
+      }
+
+      addButton.disabled = true;
+
+      api("POST", "/api/admin/player_placements", {
+        player_id: player.id,
+        event_date: dateField.input.value,
+        event_name: nameField.input.value,
+        participant_count: totalField.input.value,
+        placement: rankField.input.value
+      })
+        .then(function () {
+
+          state.placementsChanged = true;
+          toast("已新增上位紀錄。", "success");
+
+          nameField.input.value = "";
+          totalField.input.value = "";
+          rankField.input.value = "";
+
+          load();
+        })
+        .catch(function (error) {
+
+          var label = FIELD_LABELS[error.field];
+
+          toast((label ? "「" + label + "」" : "") + errorText(error), "error");
+        })
+        .then(function () {
+          addButton.disabled = false;
+        });
+    }
+
+
+    load();
+
+    return section;
+  }
 
 
   deleteButton.addEventListener("click", function () {
@@ -1433,6 +1788,19 @@
   }
 
 
+  /* 對戰方名稱：個人賽顯示選手暱稱，其他顯示戰隊 */
+  function sideName(match, side) {
+
+    var player = match["player_" + side + "_name"];
+
+    if (match.match_format === "solo" && player) {
+      return player;
+    }
+
+    return match["team_" + side + "_name"] || "待定";
+  }
+
+
   function scoreTotal(match) {
     return (Number(match.score_a) || 0) + (Number(match.score_b) || 0);
   }
@@ -1543,7 +1911,7 @@
     } else if (match.status === "finished") {
 
       var winner = match.winner_team_id
-        ? (match.winner_team_id === match.team_a_id ? match.team_a_name : match.team_b_name) + " 勝"
+        ? sideName(match, match.winner_team_id === match.team_a_id ? "a" : "b") + " 勝"
         : "平手";
 
       actions.appendChild(el("p", "ref-result", "已結束，" + winner));
@@ -1583,8 +1951,8 @@
 
     var a = Number(match.score_a) || 0;
     var b = Number(match.score_b) || 0;
-    var nameA = match.team_a_name || "A 隊";
-    var nameB = match.team_b_name || "B 隊";
+    var nameA = sideName(match, "a");
+    var nameB = sideName(match, "b");
     var winnerName = a > b ? nameA : nameB;
     var loserName = a > b ? nameB : nameA;
     var diff = Math.abs(a - b);
@@ -1608,12 +1976,20 @@
   function createScoreRow(card, match, side, isLive) {
 
     var teamId = match["team_" + side + "_id"];
-    var name = match["team_" + side + "_name"] || "待定";
+    var name = sideName(match, side);
     var isWinner = match.status === "finished" && teamId && match.winner_team_id === teamId;
 
     var row = el("div", "ref-team" + (isWinner ? " is-winner" : ""));
 
-    row.appendChild(el("div", "ref-team-name", name));
+    var label = el("div", "ref-team-label");
+    label.appendChild(el("div", "ref-team-name", name));
+
+    /* 個人賽：選手名稱下面顯示所屬戰隊 */
+    if (match.match_format === "solo" && match["player_" + side + "_name"] && match["team_" + side + "_name"]) {
+      label.appendChild(el("div", "ref-team-sub", match["team_" + side + "_name"]));
+    }
+
+    row.appendChild(label);
 
     var controls = el("div", "ref-controls");
 

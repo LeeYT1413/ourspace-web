@@ -1,0 +1,39 @@
+/* =========================================================
+   OURSPACE
+   0004 個人賽選手對戰 / 選手上位紀錄
+========================================================= */
+
+
+/* 個人賽：對戰雙方是選手（積分仍計入選手當時所屬的戰隊） */
+ALTER TABLE league_matches
+ADD COLUMN player_a_id INTEGER REFERENCES players(id);
+
+ALTER TABLE league_matches
+ADD COLUMN player_b_id INTEGER REFERENCES players(id);
+
+
+/* 上位紀錄：每一筆 = 一次上位 */
+CREATE TABLE IF NOT EXISTS player_placements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    player_id INTEGER NOT NULL,
+
+    event_date TEXT NOT NULL,
+
+    event_name TEXT NOT NULL,
+
+    participant_count INTEGER NOT NULL,
+
+    placement INTEGER NOT NULL,
+
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (player_id) REFERENCES players(id)
+);
+
+
+CREATE INDEX IF NOT EXISTS idx_player_placements_player
+ON player_placements(player_id);
+
+CREATE INDEX IF NOT EXISTS idx_player_placements_date
+ON player_placements(event_date);

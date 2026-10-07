@@ -1641,7 +1641,28 @@
   }
 
 
-  function createTeamElement(name, logoUrl, reverse, isWinner) {
+  /* 對戰方資料：個人賽顯示選手（下方小字是所屬戰隊），其他顯示戰隊 */
+  function sideInfo(match, side) {
+
+    var playerName = match["player_" + side + "_name"];
+
+    if (match.match_format === "solo" && playerName) {
+      return {
+        name: playerName,
+        logo: match["player_" + side + "_avatar"],
+        sub: match["team_" + side + "_name"] || ""
+      };
+    }
+
+    return {
+      name: match["team_" + side + "_name"],
+      logo: match["team_" + side + "_logo"],
+      sub: ""
+    };
+  }
+
+
+  function createTeamElement(name, logoUrl, reverse, isWinner, sub) {
 
     var className = "team";
 
@@ -1668,7 +1689,15 @@
     }
 
     team.appendChild(logo);
-    team.appendChild(el("div", "team-name", name || "待定"));
+
+    var text = el("div", "team-text");
+    text.appendChild(el("div", "team-name", name || "待定"));
+
+    if (sub) {
+      text.appendChild(el("div", "team-sub", sub));
+    }
+
+    team.appendChild(text);
 
     return team;
   }
@@ -1698,13 +1727,16 @@
     var teams = el("div", "match-teams");
 
     var winnerId = match.winner_team_id;
+    var sideA = sideInfo(match, "a");
+    var sideB = sideInfo(match, "b");
 
     teams.appendChild(
       createTeamElement(
-        match.team_a_name,
-        match.team_a_logo,
+        sideA.name,
+        sideA.logo,
         false,
-        winnerId && winnerId === match.team_a_id
+        winnerId && winnerId === match.team_a_id,
+        sideA.sub
       )
     );
 
@@ -1721,8 +1753,8 @@
 
     var resultText = status.name;
 
-    if (match.status === "finished" && match.winner_team_name) {
-      resultText = match.winner_team_name + " 勝利";
+    if (match.status === "finished" && winnerId) {
+      resultText = (winnerId === match.team_a_id ? sideA.name : sideB.name) + " 勝利";
     }
 
     score.appendChild(el("span", null, resultText));
@@ -1740,10 +1772,11 @@
 
     teams.appendChild(
       createTeamElement(
-        match.team_b_name,
-        match.team_b_logo,
+        sideB.name,
+        sideB.logo,
         true,
-        winnerId && winnerId === match.team_b_id
+        winnerId && winnerId === match.team_b_id,
+        sideB.sub
       )
     );
 
@@ -1999,23 +2032,24 @@
 
   /* =======================================================
      14. 陀螺爭霸排行榜
+     依選手上位紀錄累計，顯示暱稱與上位次數
   ======================================================= */
 
   var rankingBoard = byId("rankingBoard");
   var rankingSeason = byId("rankingSeason");
 
 
-  function createRankingCard(item, index) {
+  function createRankingCard(item, rank) {
 
-    var tier = RANK_TIERS[index];
+    var tier = RANK_TIERS[rank - 1];
     var isTop = Boolean(tier);
     var displayName = item.nickname || item.player_name;
 
     var card = el("article", "ranking-card " + (isTop ? tier.css : "rank-normal"));
 
-    card.appendChild(el("div", "rank-number", pad2(item.rank_number || index + 1)));
+    card.appendChild(el("div", "rank-number", pad2(rank)));
 
-    if (index === 0) {
+    if (rank === 1) {
       card.appendChild(el("div", "rank-crown", "♛"));
     }
 
@@ -2044,22 +2078,10 @@
 
     info.appendChild(el(isTop ? "h2" : "h3", null, displayName));
 
-    if (item.team_name) {
-      info.appendChild(el("div", "rank-team", item.team_name));
-    }
-
     var count = el("div", "rank-count");
     count.appendChild(el("strong", null, item.upper_count || 0));
-    count.appendChild(el("span", null, "上位"));
+    count.appendChild(el("span", null, "次上位"));
     info.appendChild(count);
-
-    info.appendChild(
-      el(
-        "div",
-        "rank-stats",
-        "勝場 " + (item.win_count || 0) + "｜積分 " + (item.points || 0)
-      )
-    );
 
     card.appendChild(info);
 
@@ -2073,19 +2095,17 @@
 
     renderState(rankingBoard, "loading", "排行榜載入中…");
 
+    if (rankingSeason) {
+      rankingSeason.textContent = "";
+    }
+
     return apiGet("/api/ranking")
       .then(function (response) {
-
-        if (rankingSeason) {
-          rankingSeason.textContent = response.season
-            ? String(response.season).toUpperCase()
-            : "SEASON";
-        }
 
         var items = response.data || [];
 
         if (!items.length) {
-          renderState(rankingBoard, "empty", "本季排行榜尚未公布。");
+          renderState(rankingBoard, "empty", "還沒有上位紀錄，第一位上榜的選手會出現在這裡。");
           return;
         }
 
@@ -2093,11 +2113,22 @@
 
         var normalList = el("div", "ranking-list");
 
+        /* 上位次數相同就同名次 */
+        var rank = 0;
+        var previous = null;
+
         items.forEach(function (item, index) {
 
-          var card = createRankingCard(item, index);
+          var count = Number(item.upper_count) || 0;
 
-          if (index < 3) {
+          if (previous === null || count !== previous) {
+            rank = index + 1;
+            previous = count;
+          }
+
+          var card = createRankingCard(item, rank);
+
+          if (rank <= 3) {
             rankingBoard.appendChild(card);
           } else {
             normalList.appendChild(card);

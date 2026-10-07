@@ -248,12 +248,16 @@ var LEAGUE_SELECT =
   "lm.score_a, lm.score_b, lm.status, lm.field_name, lm.note, " +
   "ta.id AS team_a_id, ta.team_name AS team_a_name, ta.team_logo_url AS team_a_logo, " +
   "tb.id AS team_b_id, tb.team_name AS team_b_name, tb.team_logo_url AS team_b_logo, " +
-  "tw.id AS winner_team_id, tw.team_name AS winner_team_name " +
+  "tw.id AS winner_team_id, tw.team_name AS winner_team_name, " +
+  "lm.player_a_id, COALESCE(NULLIF(pa.nickname, ''), pa.player_name) AS player_a_name, pa.avatar_url AS player_a_avatar, " +
+  "lm.player_b_id, COALESCE(NULLIF(pb.nickname, ''), pb.player_name) AS player_b_name, pb.avatar_url AS player_b_avatar " +
   "FROM league_matches lm " +
   "LEFT JOIN tournaments t ON lm.tournament_id = t.id " +
   "LEFT JOIN teams ta ON lm.team_a_id = ta.id " +
   "LEFT JOIN teams tb ON lm.team_b_id = tb.id " +
   "LEFT JOIN teams tw ON lm.winner_team_id = tw.id " +
+  "LEFT JOIN players pa ON lm.player_a_id = pa.id " +
+  "LEFT JOIN players pb ON lm.player_b_id = pb.id " +
   "WHERE (t.status IS NULL OR t.status != 'draft') ";
 
 
@@ -418,49 +422,34 @@ async function getStandings(url, env) {
 
 /* =========================================================
    RANKING
+   陀螺爭霸：依選手的上位紀錄累計
+   排序：上位次數 → 冠軍次數 → 最近上位日期
 ========================================================= */
 
+var RANKING_LIMIT = 20;
+
+
 async function getRanking(url, env) {
-
-  var season = url.searchParams.get("season");
-
-  if (!season) {
-
-    var latest =
-      await env.DB.prepare(
-        "SELECT season_name FROM player_ranking " +
-        "ORDER BY updated_at DESC, id DESC LIMIT 1"
-      )
-      .first();
-
-    if (!latest) {
-      return jsonResponse(
-        { success: true, season: null, data: [] },
-        200,
-        API_CACHE_SECONDS
-      );
-    }
-
-    season = latest.season_name;
-  }
 
   var result =
     await env.DB.prepare(
       "SELECT " +
-      "pr.id, pr.season_name, pr.rank_number, pr.win_count, pr.upper_count, pr.points, " +
       "p.id AS player_id, p.player_name, p.nickname, p.avatar_url, " +
-      "t.id AS team_id, t.team_name, t.team_logo_url " +
-      "FROM player_ranking pr " +
-      "INNER JOIN players p ON pr.player_id = p.id " +
-      "LEFT JOIN teams t ON p.team_id = t.id " +
-      "WHERE pr.season_name = ? " +
-      "ORDER BY pr.rank_number ASC LIMIT 10"
+      "COUNT(pp.id) AS upper_count, " +
+      "SUM(CASE WHEN pp.placement = 1 THEN 1 ELSE 0 END) AS first_count, " +
+      "MAX(pp.event_date) AS last_date " +
+      "FROM player_placements pp " +
+      "INNER JOIN players p ON pp.player_id = p.id " +
+      "WHERE p.status = 'active' " +
+      "GROUP BY p.id " +
+      "ORDER BY upper_count DESC, first_count DESC, last_date DESC, p.player_name ASC " +
+      "LIMIT ?"
     )
-    .bind(season)
+    .bind(RANKING_LIMIT)
     .all();
 
   return jsonResponse(
-    { success: true, season: season, data: result.results || [] },
+    { success: true, data: result.results || [] },
     200,
     API_CACHE_SECONDS
   );

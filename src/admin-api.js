@@ -114,6 +114,11 @@ var RESOURCES = {
     table: "players",
     order: "player_name ASC",
     hasUpdatedAt: true,
+    /* 列表多帶「上位次數」 */
+    listSelect:
+      "SELECT players.*, " +
+      "(SELECT COUNT(*) FROM player_placements pp WHERE pp.player_id = players.id) AS upper_count " +
+      "FROM players",
     columns: {
       player_name: { type: "text", required: true, max: 100 },
       nickname: { type: "text", max: 100 },
@@ -133,6 +138,8 @@ var RESOURCES = {
       round_number: { type: "int", min: 0 },
       match_number: { type: "int", min: 0 },
       scheduled_at: { type: "datetime", required: true },
+      player_a_id: { type: "ref" },
+      player_b_id: { type: "ref" },
       team_a_id: { type: "ref" },
       team_b_id: { type: "ref" },
       score_a: { type: "int", min: 0 },
@@ -145,32 +152,108 @@ var RESOURCES = {
       field_name: { type: "text", max: 50 },
       note: { type: "text", max: 500 }
     },
-    prepare: function (values) {
+    prepare: async function (values, isCreate, env, existing) {
 
-      if (values.team_a_id && values.team_a_id === values.team_b_id) {
-        return "SAME_TEAM";
+      /* 有送來的值優先，沒送的用資料庫原本的值 */
+      function pick(name) {
+        if (values[name] !== undefined) {
+          return values[name];
+        }
+        return existing ? existing[name] : null;
       }
 
-      var a = values.score_a || 0;
-      var b = values.score_b || 0;
+      if (pick("match_format") === "solo") {
+
+        /* 個人賽：選選手，戰隊自動帶入選手目前所屬的戰隊 */
+        if (values.player_a_id && values.player_a_id === values.player_b_id) {
+          return "SAME_PLAYER";
+        }
+
+        var teamsByPlayer = await loadPlayerTeams(env, [values.player_a_id, values.player_b_id]);
+        var sides = ["a", "b"];
+
+        for (var i = 0; i < sides.length; i++) {
+
+          var playerId = values["player_" + sides[i] + "_id"];
+
+          if (!playerId) {
+            continue;
+          }
+
+          if (!Object.prototype.hasOwnProperty.call(teamsByPlayer, playerId)) {
+            return "INVALID_REFERENCE";
+          }
+
+          if (!teamsByPlayer[playerId]) {
+            return "PLAYER_NO_TEAM";
+          }
+
+          values["team_" + sides[i] + "_id"] = teamsByPlayer[playerId];
+        }
+
+        if (pick("team_a_id") && pick("team_a_id") === pick("team_b_id")) {
+          return "SAME_TEAM_PLAYERS";
+        }
+
+      } else {
+
+        /* 雙人 / 三人 / 戰隊賽：選戰隊，清掉選手 */
+        if (values.match_format !== undefined) {
+          values.player_a_id = null;
+          values.player_b_id = null;
+        }
+
+        if (pick("team_a_id") && pick("team_a_id") === pick("team_b_id")) {
+          return "SAME_TEAM";
+        }
+      }
+
+      var a = pick("score_a") || 0;
+      var b = pick("score_b") || 0;
 
       if (a + b > MAX_TOTAL_SCORE) {
         return "SCORE_OVER_LIMIT";
       }
 
-      /* 比賽結束：兩隊加總必須剛好 9 分（不會平手） */
-      if (values.status === "finished" && a + b !== MAX_TOTAL_SCORE) {
-        return "SCORE_NOT_COMPLETE";
-      }
-
-      /* 勝方一律依比分自動判定，避免和積分對不上 */
       if (values.status !== undefined) {
+
+        /* 比賽結束：兩隊加總必須剛好 9 分（不會平手） */
+        if (values.status === "finished" && a + b !== MAX_TOTAL_SCORE) {
+          return "SCORE_NOT_COMPLETE";
+        }
+
+        /* 勝方一律依比分自動判定，避免和積分對不上 */
         values.winner_team_id =
           values.status === "finished" && a !== b
-            ? (a > b ? values.team_a_id : values.team_b_id) || null
+            ? (a > b ? pick("team_a_id") : pick("team_b_id")) || null
             : null;
       }
 
+      return null;
+    }
+  },
+
+  /* 選手上位紀錄：一筆 = 一次上位 */
+  player_placements: {
+    table: "player_placements",
+    order: "event_date DESC, id DESC",
+    hasUpdatedAt: false,
+    filters: ["player_id"],
+    columns: {
+      player_id: { type: "ref", required: true },
+      event_date: { type: "date", required: true },
+      event_name: { type: "text", required: true, max: 100 },
+      participant_count: { type: "int", required: true, min: 1 },
+      placement: { type: "int", required: true, min: 1 }
+    },
+    prepare: function (values) {
+      if (
+        values.placement !== undefined &&
+        values.participant_count !== undefined &&
+        values.placement > values.participant_count
+      ) {
+        return "PLACEMENT_OVER_COUNT";
+      }
       return null;
     }
   },
@@ -266,6 +349,15 @@ function normalizeValue(def, raw) {
     return { value: text };
   }
 
+  if (def.type === "date") {
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+      return { error: "INVALID_DATE" };
+    }
+
+    return { value: text };
+  }
+
   if (def.type === "datetime") {
 
     var datetime = text.replace("T", " ");
@@ -296,7 +388,7 @@ function normalizeValue(def, raw) {
 
 
 /* 回傳 { values } 或 { error, field } */
-function collectValues(config, body, isCreate) {
+async function collectValues(config, body, isCreate, env, existing) {
 
   var values = {};
   var names = Object.keys(config.columns);
@@ -321,7 +413,7 @@ function collectValues(config, body, isCreate) {
 
   if (config.prepare) {
 
-    var prepareError = config.prepare(values, isCreate);
+    var prepareError = await config.prepare(values, isCreate, env, existing || null);
 
     if (prepareError) {
       return { error: prepareError };
@@ -347,6 +439,38 @@ function databaseErrorResponse(error) {
   }
 
   throw error;
+
+}
+
+
+/* 查選手目前所屬的戰隊：{ 選手 id: 戰隊 id 或 null } */
+async function loadPlayerTeams(env, ids) {
+
+  var list = ids.filter(function (id) {
+    return Boolean(id);
+  });
+
+  var map = {};
+
+  if (!list.length) {
+    return map;
+  }
+
+  var placeholders = list.map(function () {
+    return "?";
+  });
+
+  var statement = env.DB.prepare(
+    "SELECT id, team_id FROM players WHERE id IN (" + placeholders.join(", ") + ")"
+  );
+
+  var result = await statement.bind.apply(statement, list).all();
+
+  (result.results || []).forEach(function (row) {
+    map[row.id] = row.team_id;
+  });
+
+  return map;
 
 }
 
@@ -392,7 +516,7 @@ export async function handleAdminApi(request, url, env) {
   if (!id) {
 
     if (method === "GET") {
-      return listRecords(env, config);
+      return listRecords(env, config, url);
     }
 
     if (method === "POST" && config.allowCreate !== false) {
@@ -425,14 +549,36 @@ export async function handleAdminApi(request, url, env) {
    通用 CRUD
 ========================================================= */
 
-async function listRecords(env, config) {
+async function listRecords(env, config, url) {
 
-  var result =
-    await env.DB.prepare(
-      "SELECT * FROM " + config.table +
-      " ORDER BY " + config.order + " LIMIT 1000"
-    )
-    .all();
+  var sql = config.listSelect || "SELECT * FROM " + config.table;
+  var conditions = [];
+  var bindings = [];
+
+  /* 允許的篩選條件，例如 ?player_id=3 */
+  (config.filters || []).forEach(function (name) {
+
+    var value = url.searchParams.get(name);
+
+    if (isPositiveInteger(value)) {
+      conditions.push(name + " = ?");
+      bindings.push(Number(value));
+    }
+  });
+
+  if (conditions.length) {
+    sql += " WHERE " + conditions.join(" AND ");
+  }
+
+  sql += " ORDER BY " + config.order + " LIMIT 1000";
+
+  var statement = env.DB.prepare(sql);
+
+  if (bindings.length) {
+    statement = statement.bind.apply(statement, bindings);
+  }
+
+  var result = await statement.all();
 
   return jsonResponse({ success: true, data: result.results || [] });
 
@@ -456,7 +602,7 @@ async function createRecord(request, env, staff, resource, config) {
     return errorResponse("INVALID_JSON", 400);
   }
 
-  var collected = collectValues(config, body, true);
+  var collected = await collectValues(config, body, true, env, null);
 
   if (collected.error) {
     return errorResponse(collected.error, 400, { field: collected.field || null });
@@ -513,7 +659,7 @@ async function updateRecord(request, env, staff, resource, config, id) {
     return errorResponse("NOT_FOUND", 404);
   }
 
-  var collected = collectValues(config, body, false);
+  var collected = await collectValues(config, body, false, env, existing);
 
   if (collected.error) {
     return errorResponse(collected.error, 400, { field: collected.field || null });
@@ -593,7 +739,7 @@ async function getLookups(env) {
   var results = await env.DB.batch([
     env.DB.prepare("SELECT id, team_name FROM teams ORDER BY team_name ASC"),
     env.DB.prepare("SELECT id, title, tournament_type FROM tournaments ORDER BY start_at DESC, id DESC"),
-    env.DB.prepare("SELECT id, player_name, nickname FROM players ORDER BY player_name ASC")
+    env.DB.prepare("SELECT id, player_name, nickname, team_id FROM players ORDER BY player_name ASC")
   ]);
 
   return jsonResponse({
