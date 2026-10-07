@@ -20,6 +20,7 @@
   --blue: #00d9ff;
   --red: #ff3159;
   --green: #31f28b;
+  --orange: #ffb020;
 
   --fast: 0.15s ease;
 }
@@ -245,6 +246,10 @@ a {
 
 .btn-block {
   width: 100%;
+}
+
+.btn-grow {
+  flex: 1;
 }
 
 .icon-button {
@@ -601,6 +606,11 @@ a {
   border-color: var(--red);
 }
 
+.badge-paused {
+  color: var(--orange);
+  border-color: rgba(255, 176, 32, 0.5);
+}
+
 .badge-finished,
 .badge-done {
   color: var(--green);
@@ -822,6 +832,10 @@ a {
   box-shadow: 0 0 0 1px rgba(255, 49, 89, 0.25);
 }
 
+.ref-card.status-paused {
+  border-top-color: var(--orange);
+}
+
 .ref-card.status-finished {
   border-top-color: var(--green);
 }
@@ -956,6 +970,21 @@ a {
 
 .ref-card.is-syncing .ref-score {
   color: var(--text-soft);
+}
+
+.ref-total {
+  padding: 8px 14px;
+
+  color: var(--text-soft);
+  border-top: 1px solid var(--line);
+
+  font-size: 13px;
+  text-align: right;
+}
+
+.ref-total.is-full {
+  color: var(--yellow);
+  font-weight: 700;
 }
 
 .ref-actions {

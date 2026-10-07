@@ -51,6 +51,11 @@ export async function handlePublicApi(request, url, env) {
       return getLeague(url, env);
     }
 
+    /* 必須放在 /api/league/:id 之前 */
+    if (pathname === "/api/league/standings") {
+      return getStandings(url, env);
+    }
+
     if (pathname.indexOf("/api/league/") === 0) {
       return getLeagueMatch(pathname.replace("/api/league/", ""), env);
     }
@@ -239,7 +244,7 @@ async function getTournament(tournamentId, env) {
 var LEAGUE_SELECT =
   "SELECT " +
   "lm.id, lm.tournament_id, t.title AS tournament_title, " +
-  "lm.round_number, lm.match_number, lm.scheduled_at, " +
+  "lm.match_format, lm.round_number, lm.match_number, lm.scheduled_at, " +
   "lm.score_a, lm.score_b, lm.status, lm.field_name, lm.note, " +
   "ta.id AS team_a_id, ta.team_name AS team_a_name, ta.team_logo_url AS team_a_logo, " +
   "tb.id AS team_b_id, tb.team_name AS team_b_name, tb.team_logo_url AS team_b_logo, " +
@@ -299,6 +304,110 @@ async function getLeagueMatch(matchId, env) {
 
   return jsonResponse(
     { success: true, data: match },
+    200,
+    LIVE_CACHE_SECONDS
+  );
+
+}
+
+
+/* =========================================================
+   LEAGUE STANDINGS
+   戰隊積分：依「已結束」的比賽即時計算
+   規則：積分 = 比分差（例：9:0 → +9 / -9，5:4 → +1 / -1）
+   分成個人賽 / 雙人賽 / 三人賽，加總為總積分
+========================================================= */
+
+/* 把每場比賽拆成 A 隊、B 隊各一列，積分 = 自己分數 - 對手分數 */
+var STANDINGS_SQL =
+  "WITH sides AS ( " +
+  "  SELECT tournament_id, match_format, status, team_a_id AS team_id, " +
+  "    COALESCE(score_a, 0) AS own, COALESCE(score_b, 0) AS opp " +
+  "  FROM league_matches WHERE team_a_id IS NOT NULL " +
+  "  UNION ALL " +
+  "  SELECT tournament_id, match_format, status, team_b_id AS team_id, " +
+  "    COALESCE(score_b, 0) AS own, COALESCE(score_a, 0) AS opp " +
+  "  FROM league_matches WHERE team_b_id IS NOT NULL " +
+  "), scored AS ( " +
+  "  SELECT team_id, match_format, " +
+  "    CASE WHEN status = 'finished' THEN own - opp ELSE 0 END AS pts, " +
+  "    CASE WHEN status = 'finished' AND own > opp THEN 1 ELSE 0 END AS win, " +
+  "    CASE WHEN status = 'finished' AND own < opp THEN 1 ELSE 0 END AS loss, " +
+  "    CASE WHEN status = 'finished' AND own = opp THEN 1 ELSE 0 END AS draw " +
+  "  FROM sides " +
+  "  WHERE tournament_id = ? AND status != 'cancelled' " +
+  ") " +
+  "SELECT " +
+  "  t.id AS team_id, t.team_name, t.team_logo_url, " +
+  "  SUM(CASE WHEN s.match_format = 'solo' THEN s.pts ELSE 0 END) AS solo_points, " +
+  "  SUM(CASE WHEN s.match_format = 'duo' THEN s.pts ELSE 0 END) AS duo_points, " +
+  "  SUM(CASE WHEN s.match_format = 'trio' THEN s.pts ELSE 0 END) AS trio_points, " +
+  "  SUM(s.pts) AS total_points, " +
+  "  SUM(s.win) AS wins, SUM(s.loss) AS losses, SUM(s.draw) AS draws " +
+  "FROM scored s " +
+  "INNER JOIN teams t ON t.id = s.team_id " +
+  "GROUP BY t.id " +
+  "ORDER BY total_points DESC, wins DESC, t.team_name ASC";
+
+
+async function getStandings(url, env) {
+
+  var tournamentId = url.searchParams.get("tournament_id");
+  var tournament = null;
+
+  if (tournamentId) {
+
+    if (!isPositiveInteger(tournamentId)) {
+      return errorResponse("INVALID_TOURNAMENT_ID", 400);
+    }
+
+    tournament =
+      await env.DB.prepare(
+        "SELECT id, title, status FROM tournaments " +
+        "WHERE id = ? AND status != 'draft'"
+      )
+      .bind(Number(tournamentId))
+      .first();
+
+  } else {
+
+    /* 沒指定時：優先進行中的聯賽，其次是最近有比賽的 */
+    tournament =
+      await env.DB.prepare(
+        "SELECT t.id, t.title, t.status " +
+        "FROM tournaments t " +
+        "INNER JOIN league_matches lm ON lm.tournament_id = t.id " +
+        "WHERE t.status != 'draft' " +
+        "GROUP BY t.id " +
+        "ORDER BY CASE t.status " +
+        "WHEN 'ongoing' THEN 0 " +
+        "WHEN 'open' THEN 1 " +
+        "WHEN 'closed' THEN 2 " +
+        "ELSE 3 END, MAX(lm.scheduled_at) DESC " +
+        "LIMIT 1"
+      )
+      .first();
+  }
+
+  if (!tournament) {
+    return jsonResponse(
+      { success: true, tournament: null, data: [] },
+      200,
+      LIVE_CACHE_SECONDS
+    );
+  }
+
+  var result =
+    await env.DB.prepare(STANDINGS_SQL)
+    .bind(tournament.id)
+    .all();
+
+  return jsonResponse(
+    {
+      success: true,
+      tournament: tournament,
+      data: result.results || []
+    },
     200,
     LIVE_CACHE_SECONDS
   );

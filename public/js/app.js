@@ -50,8 +50,15 @@
   var MATCH_STATUSES = {
     scheduled: { name: "未開賽", tag: "UPCOMING", css: "upcoming" },
     live: { name: "比賽中", tag: "LIVE", css: "live" },
+    paused: { name: "暫停中", tag: "PAUSED", css: "paused" },
     finished: { name: "比賽結束", tag: "FINISHED", css: "finished" },
     cancelled: { name: "已取消", tag: "CANCELLED", css: "cancelled" }
+  };
+
+  var MATCH_FORMATS = {
+    solo: "個人賽",
+    duo: "雙人賽",
+    trio: "三人賽"
   };
 
   var RANK_TIERS = [
@@ -1682,6 +1689,10 @@
     time.appendChild(el("span", null, formatTime(parts) || "--:--"));
     time.appendChild(el("small", null, status.tag));
 
+    if (MATCH_FORMATS[match.match_format]) {
+      time.appendChild(el("small", "match-format", MATCH_FORMATS[match.match_format]));
+    }
+
 
     var teams = el("div", "match-teams");
 
@@ -1746,6 +1757,9 @@
   /* silent = 背景自動更新：不顯示載入中、保留目前選的日期 */
   function loadLeague(silent) {
 
+    /* 頁面下方的戰隊積分一起更新 */
+    loadStandings(silent);
+
     if (!silent) {
       renderState(matchList, "loading", "賽程載入中…");
     }
@@ -1791,7 +1805,7 @@
 
     return leagueGroups.some(function (group) {
       return group.matches.some(function (match) {
-        return match.status === "live";
+        return match.status === "live" || match.status === "paused";
       });
     });
   }
@@ -1799,7 +1813,7 @@
 
   /*
     即時比分：停留在「戰隊聯賽」頁時自動更新。
-    有比賽進行中每 10 秒，沒有則每 60 秒。
+    有比賽進行中（含暫停）每 10 秒，沒有則每 60 秒。
   */
   var leaguePollTimer = null;
 
@@ -1825,6 +1839,160 @@
       loadLeague(true);
     }
   });
+
+
+  /* =======================================================
+     13-2. 戰隊積分
+     依已結束的比賽計算，積分 = 比分差
+  ======================================================= */
+
+  var standingsBoard = byId("standingsBoard");
+  var standingsTitle = byId("standingsTitle");
+
+  var STANDING_COLUMNS = [
+    { key: "solo_points", label: "個人賽" },
+    { key: "duo_points", label: "雙人賽" },
+    { key: "trio_points", label: "三人賽" }
+  ];
+
+
+  function pointsText(value) {
+
+    var number = Number(value) || 0;
+
+    return number > 0 ? "+" + number : String(number);
+  }
+
+
+  function pointsCss(value) {
+
+    var number = Number(value) || 0;
+
+    if (number > 0) {
+      return "points-plus";
+    }
+
+    return number < 0 ? "points-minus" : "points-zero";
+  }
+
+
+  function createStandingCard(item, rank) {
+
+    var isLeader = rank === 1 && Number(item.total_points) > 0;
+    var card = el("article", "standing-card" + (isLeader ? " is-leader" : ""));
+
+
+    /* 名次 + 隊徽 + 隊名 */
+    var head = el("div", "standing-head");
+
+    head.appendChild(el("div", "standing-rank", pad2(rank)));
+
+    var logo = el("div", "team-logo standing-logo");
+    var logoUrl = safeUrl(item.team_logo_url);
+
+    if (logoUrl) {
+      var img = el("img");
+      img.src = logoUrl;
+      img.alt = "";
+      img.loading = "lazy";
+      logo.appendChild(img);
+    } else {
+      logo.textContent = initialOf(item.team_name);
+    }
+
+    head.appendChild(logo);
+
+    var record =
+      (item.wins || 0) + " 勝 " + (item.losses || 0) + " 敗" +
+      (item.draws ? " " + item.draws + " 和" : "");
+
+    var name = el("div", "standing-name");
+    name.appendChild(el("h3", null, item.team_name));
+    name.appendChild(el("small", null, record));
+    head.appendChild(name);
+
+    card.appendChild(head);
+
+
+    /* 個人 / 雙人 / 三人 */
+    var stats = el("div", "standing-stats");
+
+    STANDING_COLUMNS.forEach(function (column) {
+
+      var box = el("div", "standing-stat");
+
+      box.appendChild(el("small", null, column.label));
+      box.appendChild(el("strong", pointsCss(item[column.key]), pointsText(item[column.key])));
+
+      stats.appendChild(box);
+    });
+
+    card.appendChild(stats);
+
+
+    /* 總積分 */
+    var total = el("div", "standing-total");
+
+    total.appendChild(el("span", null, "總積分"));
+    total.appendChild(el("strong", pointsCss(item.total_points), pointsText(item.total_points)));
+
+    card.appendChild(total);
+
+    return card;
+  }
+
+
+  function loadStandings(silent) {
+
+    if (!standingsBoard) {
+      return Promise.resolve();
+    }
+
+    if (!silent) {
+      renderState(standingsBoard, "loading", "積分載入中…");
+    }
+
+    return apiGet("/api/league/standings")
+      .then(function (response) {
+
+        if (standingsTitle) {
+          standingsTitle.textContent = response.tournament ? response.tournament.title : "";
+        }
+
+        var items = response.data || [];
+
+        if (!items.length) {
+          renderState(standingsBoard, "empty", "聯賽開打後，積分會顯示在這裡。");
+          return;
+        }
+
+        clear(standingsBoard);
+
+        /* 總積分相同就同名次 */
+        var rank = 0;
+        var previous = null;
+
+        items.forEach(function (item, index) {
+
+          var total = Number(item.total_points) || 0;
+
+          if (previous === null || total !== previous) {
+            rank = index + 1;
+            previous = total;
+          }
+
+          standingsBoard.appendChild(createStandingCard(item, rank));
+        });
+      })
+      .catch(function (error) {
+
+        console.error("積分載入失敗", error);
+
+        if (!silent) {
+          renderState(standingsBoard, "error", "積分載入失敗，請重新整理頁面。");
+        }
+      });
+  }
 
 
   /* =======================================================

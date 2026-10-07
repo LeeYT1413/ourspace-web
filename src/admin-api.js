@@ -9,7 +9,9 @@ import {
   parseJsonBody,
   cleanText,
   isPositiveInteger,
-  taiwanNow
+  taiwanNow,
+  MAX_TOTAL_SCORE,
+  MATCH_FORMATS
 } from "./util.js";
 
 import {
@@ -46,9 +48,9 @@ var RESOURCES = {
       sort_order: { type: "int", default: 0 },
       published_at: { type: "datetime" }
     },
-    prepare: function (values, isCreate) {
-      /* 發布時沒填時間，就用現在的台灣時間 */
-      if (isCreate && values.status === "published" && !values.published_at) {
+    prepare: function (values) {
+      /* 發布時沒填時間，就用現在的台灣時間（新增或草稿改發布都適用） */
+      if (values.status === "published" && !values.published_at) {
         values.published_at = taiwanNow();
       }
       return null;
@@ -127,6 +129,7 @@ var RESOURCES = {
     hasUpdatedAt: true,
     columns: {
       tournament_id: { type: "ref", required: true },
+      match_format: { type: "enum", values: MATCH_FORMATS, default: "trio" },
       round_number: { type: "int", min: 0 },
       match_number: { type: "int", min: 0 },
       scheduled_at: { type: "datetime", required: true },
@@ -136,17 +139,38 @@ var RESOURCES = {
       score_b: { type: "int", min: 0 },
       status: {
         type: "enum",
-        values: ["scheduled", "live", "finished", "cancelled"],
+        values: ["scheduled", "live", "paused", "finished", "cancelled"],
         default: "scheduled"
       },
-      winner_team_id: { type: "ref" },
       field_name: { type: "text", max: 50 },
       note: { type: "text", max: 500 }
     },
     prepare: function (values) {
+
       if (values.team_a_id && values.team_a_id === values.team_b_id) {
         return "SAME_TEAM";
       }
+
+      var a = values.score_a || 0;
+      var b = values.score_b || 0;
+
+      if (a + b > MAX_TOTAL_SCORE) {
+        return "SCORE_OVER_LIMIT";
+      }
+
+      /* 比賽結束：兩隊加總必須剛好 9 分（不會平手） */
+      if (values.status === "finished" && a + b !== MAX_TOTAL_SCORE) {
+        return "SCORE_NOT_COMPLETE";
+      }
+
+      /* 勝方一律依比分自動判定，避免和積分對不上 */
+      if (values.status !== undefined) {
+        values.winner_team_id =
+          values.status === "finished" && a !== b
+            ? (a > b ? values.team_a_id : values.team_b_id) || null
+            : null;
+      }
+
       return null;
     }
   },
@@ -357,7 +381,9 @@ export async function handleAdminApi(request, url, env) {
     return handleStaff(request, env, staff, method, id);
   }
 
-  var config = RESOURCES[resource];
+  var config = Object.prototype.hasOwnProperty.call(RESOURCES, resource)
+    ? RESOURCES[resource]
+    : null;
 
   if (!config) {
     return null;

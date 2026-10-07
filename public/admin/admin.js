@@ -26,10 +26,18 @@
       ["ongoing", "進行中"],
       ["finished", "已結束"]
     ],
-    matchStatus: [["scheduled", "未開賽"], ["live", "比賽中"], ["finished", "比賽結束"], ["cancelled", "已取消"]],
+    matchStatus: [["scheduled", "未開賽"], ["live", "比賽中"], ["paused", "暫停中"], ["finished", "比賽結束"], ["cancelled", "已取消"]],
+    matchFormat: [["solo", "個人賽"], ["duo", "雙人賽"], ["trio", "三人賽"]],
     contactStatus: [["unread", "未讀"], ["read", "已讀"], ["done", "已處理"]],
     role: [["referee", "裁判"], ["admin", "管理員"]]
   };
+
+
+  /*
+    戰隊聯賽規則（要和 src/util.js 一致）
+    兩隊比分加總上限 9，剛好 9 分才能結束；積分 = 比分差
+  */
+  var MAX_TOTAL_SCORE = 9;
 
 
   var ERROR_MESSAGES = {
@@ -57,7 +65,10 @@
     CANNOT_DELETE_SELF: "不能刪除自己的帳號。",
     CANNOT_DEMOTE_SELF: "不能把自己改成裁判。",
     CANNOT_DISABLE_SELF: "不能停用自己的帳號。",
-    MATCH_NOT_LIVE: "比賽不在進行中，請先按「開始比賽」。",
+    MATCH_NOT_LIVE: "比賽不在進行中（未開始或暫停中），無法加減分。",
+    SCORE_LIMIT: "兩隊比分加總已達 9 分上限。",
+    SCORE_OVER_LIMIT: "兩隊比分加總不能超過 9 分。",
+    SCORE_NOT_COMPLETE: "兩隊比分加總要剛好 9 分才能結束比賽。",
     INVALID_MATCH_STATE: "比賽狀態已被其他人更新，畫面已重新整理。",
     DATABASE_NOT_READY: "資料庫還沒建立後台資料表，請先執行 migration。",
     NETWORK_ERROR: "連線失敗，請檢查網路後再試。"
@@ -75,10 +86,11 @@
       itemName: "比賽",
       endpoint: "/api/admin/league_matches",
       refreshLookups: false,
-      hint: "比賽當天的比分建議由裁判在「裁判計分」更新。這裡適合排賽程或修正錯誤。",
+      hint: "比賽當天的比分建議由裁判在「裁判計分」更新。勝方與積分會依比分自動計算。",
       columns: [
         { label: "時間", value: function (r) { return r.scheduled_at; } },
         { label: "賽事", value: function (r) { return refLabel("tournaments", r.tournament_id); } },
+        { label: "賽別", value: function (r) { return enumLabel("matchFormat", r.match_format); } },
         { label: "輪次", value: function (r) { return r.round_number ? "R" + r.round_number : ""; } },
         { label: "對戰", value: function (r) { return refLabel("teams", r.team_a_id) + " vs " + refLabel("teams", r.team_b_id); } },
         { label: "比分", value: function (r) { return r.score_a === null ? "" : r.score_a + " : " + r.score_b; } },
@@ -86,15 +98,15 @@
       ],
       fields: [
         { name: "tournament_id", label: "賽事", type: "ref", ref: "tournaments", required: true },
-        { name: "scheduled_at", label: "比賽時間", type: "datetime", required: true },
+        { name: "match_format", label: "賽別", type: "select", options: "matchFormat", default: "trio", half: true },
+        { name: "scheduled_at", label: "比賽時間", type: "datetime", required: true, half: true },
         { name: "round_number", label: "第幾輪", type: "number", half: true },
         { name: "match_number", label: "第幾場", type: "number", half: true },
         { name: "team_a_id", label: "A 隊", type: "ref", ref: "teams", half: true },
         { name: "team_b_id", label: "B 隊", type: "ref", ref: "teams", half: true },
         { name: "score_a", label: "A 隊分數", type: "number", half: true },
-        { name: "score_b", label: "B 隊分數", type: "number", half: true },
-        { name: "status", label: "狀態", type: "select", options: "matchStatus", default: "scheduled", half: true },
-        { name: "winner_team_id", label: "勝方", type: "ref", ref: "teams", half: true, help: "裁判按「結束比賽」會自動判定。" },
+        { name: "score_b", label: "B 隊分數", type: "number", half: true, help: "兩隊加總最多 9 分，結束時要剛好 9 分" },
+        { name: "status", label: "狀態", type: "select", options: "matchStatus", default: "scheduled" },
         { name: "field_name", label: "場地", type: "text", placeholder: "例：A 場" },
         { name: "note", label: "備註", type: "text", help: "會顯示在官網比分下方。" }
       ]
@@ -1421,6 +1433,20 @@
   }
 
 
+  function scoreTotal(match) {
+    return (Number(match.score_a) || 0) + (Number(match.score_b) || 0);
+  }
+
+
+  function totalText(match) {
+
+    var total = scoreTotal(match);
+
+    return "比分合計 " + total + " / " + MAX_TOTAL_SCORE +
+      (total >= MAX_TOTAL_SCORE ? "，可以結束比賽" : "（滿 " + MAX_TOTAL_SCORE + " 分才能結束）");
+  }
+
+
   function createRefereeCard(match) {
 
     var card = el("article", "ref-card status-" + match.status);
@@ -1428,7 +1454,7 @@
     card.setAttribute("data-match-id", match.id);
 
 
-    /* 標頭：時間、場地、狀態 */
+    /* 標頭：時間、賽別、場地、狀態 */
     var head = el("div", "ref-head");
 
     var meta = el("div", "ref-meta");
@@ -1436,6 +1462,10 @@
 
     if (match.scheduled_at && match.scheduled_at.slice(0, 10) !== referee.date) {
       metaParts[0] = match.scheduled_at.slice(5, 16).replace("-", "/");
+    }
+
+    if (match.match_format) {
+      metaParts.push(enumLabel("matchFormat", match.match_format));
     }
 
     if (match.field_name) {
@@ -1460,9 +1490,18 @@
 
     /* 兩隊比分 */
     var isLive = match.status === "live";
+    var isPaused = match.status === "paused";
 
     card.appendChild(createScoreRow(card, match, "a", isLive));
     card.appendChild(createScoreRow(card, match, "b", isLive));
+
+    if (isLive || isPaused) {
+
+      var total = el("div", "ref-total", totalText(match));
+
+      total.classList.toggle("is-full", scoreTotal(match) >= MAX_TOTAL_SCORE);
+      card.appendChild(total);
+    }
 
 
     /* 動作 */
@@ -1476,27 +1515,30 @@
         })
       );
 
-    } else if (isLive) {
+    } else if (isLive || isPaused) {
 
-      actions.appendChild(
-        button("結束比賽", "btn btn-danger btn-block", function () {
+      if (isLive) {
+        actions.appendChild(
+          button("暫停", "btn btn-ghost", function () {
+            changeStatus(card, match, "pause");
+          })
+        );
+      } else {
+        actions.appendChild(
+          button("繼續比賽", "btn btn-primary", function () {
+            changeStatus(card, match, "resume");
+          })
+        );
+      }
 
-          var a = match.score_a || 0;
-          var b = match.score_b || 0;
-          var result = a === b
-            ? "目前平手，將不判定勝方。"
-            : "勝方：" + (a > b ? match.team_a_name : match.team_b_name);
+      var finishButton = button("結束比賽", "btn btn-danger btn-grow ref-finish", function () {
+        confirmFinish(card, match);
+      });
 
-          var message =
-            "確定結束比賽？\n\n" +
-            (match.team_a_name || "A 隊") + "  " + a + " : " + b + "  " + (match.team_b_name || "B 隊") +
-            "\n" + result;
+      /* 比分加總滿 9 分才能按 */
+      finishButton.disabled = scoreTotal(match) !== MAX_TOTAL_SCORE;
 
-          if (window.confirm(message)) {
-            changeStatus(card, match, "finish");
-          }
-        })
-      );
+      actions.appendChild(finishButton);
 
     } else if (match.status === "finished") {
 
@@ -1508,7 +1550,7 @@
 
       actions.appendChild(
         button("重新開啟", "btn btn-ghost", function () {
-          if (window.confirm("重新開啟後可以再修改比分，確定嗎？")) {
+          if (window.confirm("重新開啟後可以再修改比分，積分會先移除，再次結束時重新計算。確定嗎？")) {
             changeStatus(card, match, "reopen");
           }
         })
@@ -1522,6 +1564,44 @@
     card.appendChild(actions);
 
     return card;
+  }
+
+
+  /* 結束前確認：顯示比分與積分變化（積分 = 比分差） */
+  function confirmFinish(card, match) {
+
+    /* 加減分還在送出中，等同步完成再結束，避免用到舊比分 */
+    if (referee.pendingById[match.id] > 0) {
+      toast("比分同步中，請稍候再按一次。", "error");
+      return;
+    }
+
+    if (scoreTotal(match) !== MAX_TOTAL_SCORE) {
+      toast(ERROR_MESSAGES.SCORE_NOT_COMPLETE, "error");
+      return;
+    }
+
+    var a = Number(match.score_a) || 0;
+    var b = Number(match.score_b) || 0;
+    var nameA = match.team_a_name || "A 隊";
+    var nameB = match.team_b_name || "B 隊";
+    var winnerName = a > b ? nameA : nameB;
+    var loserName = a > b ? nameB : nameA;
+    var diff = Math.abs(a - b);
+
+    var result =
+      "勝方：" + winnerName + "\n積分：" +
+      winnerName + " +" + diff + "、" +
+      loserName + " −" + diff;
+
+    var message =
+      "確定結束比賽？\n\n" +
+      nameA + "  " + a + " : " + b + "  " + nameB +
+      "\n" + result;
+
+    if (window.confirm(message)) {
+      changeStatus(card, match, "finish");
+    }
   }
 
 
@@ -1548,7 +1628,7 @@
     plus.setAttribute("aria-label", name + " 加 1 分");
 
     minus.disabled = !isLive;
-    plus.disabled = !isLive;
+    plus.disabled = !isLive || scoreTotal(match) >= MAX_TOTAL_SCORE;
 
     minus.addEventListener("click", function () {
       changeScore(card, match, side, -1, score);
@@ -1568,6 +1648,30 @@
   }
 
 
+  /* 比分改變後：更新合計文字；滿 9 分時鎖住兩隊的 +、開放「結束比賽」 */
+  function updateTotalDisplay(card, match) {
+
+    var full = scoreTotal(match) >= MAX_TOTAL_SCORE;
+
+    Array.prototype.forEach.call(card.querySelectorAll(".ref-plus"), function (node) {
+      node.disabled = full;
+    });
+
+    var finishButton = card.querySelector(".ref-finish");
+
+    if (finishButton) {
+      finishButton.disabled = scoreTotal(match) !== MAX_TOTAL_SCORE;
+    }
+
+    var total = card.querySelector(".ref-total");
+
+    if (total) {
+      total.textContent = totalText(match);
+      total.classList.toggle("is-full", full);
+    }
+  }
+
+
   /*
     加減分：畫面先立即更新（不用等網路），
     伺服器用原子加減，所有請求完成後再抓一次最新資料校正。
@@ -1575,14 +1679,21 @@
   function changeScore(card, match, side, delta, scoreNode) {
 
     var key = "score_" + side;
-    var next = Math.max(0, (Number(match[key]) || 0) + delta);
+    var current = Number(match[key]) || 0;
+    var next = Math.max(0, current + delta);
 
-    if (next === match[key]) {
+    if (next === current) {
+      return;
+    }
+
+    if (delta > 0 && scoreTotal(match) >= MAX_TOTAL_SCORE) {
+      toast(ERROR_MESSAGES.SCORE_LIMIT, "error");
       return;
     }
 
     match[key] = next;
     scoreNode.textContent = String(next);
+    updateTotalDisplay(card, match);
 
     card.classList.add("is-syncing");
     referee.pending += 1;
@@ -1621,7 +1732,13 @@
     api("POST", "/api/referee/matches/" + match.id + "/status", { action: action })
       .then(function (response) {
 
-        var labels = { start: "比賽開始。", finish: "比賽結束。", reopen: "已重新開啟。" };
+        var labels = {
+          start: "比賽開始。",
+          pause: "比賽已暫停。",
+          resume: "比賽繼續。",
+          finish: "比賽結束，積分已計入。",
+          reopen: "已重新開啟。"
+        };
 
         toast(labels[action], "success");
         replaceCard(response.data);

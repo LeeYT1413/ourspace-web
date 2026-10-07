@@ -9,7 +9,8 @@ import {
   parseJsonBody,
   cleanText,
   isPositiveInteger,
-  taiwanToday
+  taiwanToday,
+  MAX_TOTAL_SCORE
 } from "./util.js";
 
 import { requireStaff, writeAuditLog } from "./auth.js";
@@ -18,7 +19,7 @@ import { requireStaff, writeAuditLog } from "./auth.js";
 var MATCH_SELECT =
   "SELECT " +
   "lm.id, lm.tournament_id, t.title AS tournament_title, " +
-  "lm.round_number, lm.match_number, lm.scheduled_at, " +
+  "lm.match_format, lm.round_number, lm.match_number, lm.scheduled_at, " +
   "lm.score_a, lm.score_b, lm.status, lm.field_name, lm.note, " +
   "lm.team_a_id, ta.team_name AS team_a_name, " +
   "lm.team_b_id, tb.team_name AS team_b_name, " +
@@ -29,7 +30,18 @@ var MATCH_SELECT =
   "LEFT JOIN teams tb ON lm.team_b_id = tb.id ";
 
 
-/* 各狀態操作：允許的目前狀態 + 要執行的 SET */
+/* 依比分判定勝方（平手 = NULL） */
+var WINNER_SQL =
+  "winner_team_id = CASE " +
+  "WHEN COALESCE(score_a, 0) > COALESCE(score_b, 0) THEN team_a_id " +
+  "WHEN COALESCE(score_b, 0) > COALESCE(score_a, 0) THEN team_b_id " +
+  "ELSE NULL END";
+
+
+/*
+  各狀態操作：允許的目前狀態 + 要執行的 SET
+  scheduled → live ⇄ paused → finished → (reopen) live
+*/
 var STATUS_ACTIONS = {
 
   start: {
@@ -41,14 +53,22 @@ var STATUS_ACTIONS = {
       "winner_team_id = NULL"
   },
 
-  finish: {
+  pause: {
     from: ["live"],
-    set:
-      "status = 'finished', " +
-      "winner_team_id = CASE " +
-      "WHEN COALESCE(score_a, 0) > COALESCE(score_b, 0) THEN team_a_id " +
-      "WHEN COALESCE(score_b, 0) > COALESCE(score_a, 0) THEN team_b_id " +
-      "ELSE NULL END"
+    set: "status = 'paused'"
+  },
+
+  resume: {
+    from: ["paused"],
+    set: "status = 'live'"
+  },
+
+  /* 兩隊比分加總剛好 MAX_TOTAL_SCORE 才能結束（9 是奇數，所以不會平手） */
+  finish: {
+    from: ["live", "paused"],
+    where: "COALESCE(score_a, 0) + COALESCE(score_b, 0) = " + Number(MAX_TOTAL_SCORE),
+    error: "SCORE_NOT_COMPLETE",
+    set: "status = 'finished', " + WINNER_SQL
   },
 
   reopen: {
@@ -128,7 +148,7 @@ async function matchResponse(env, id) {
 }
 
 
-/* 指定日期的比賽 + 任何進行中的比賽 */
+/* 指定日期的比賽 + 任何進行中 / 暫停中的比賽 */
 async function listMatches(url, env) {
 
   var date = cleanText(url.searchParams.get("date"));
@@ -141,7 +161,7 @@ async function listMatches(url, env) {
 
     env.DB.prepare(
       MATCH_SELECT +
-      "WHERE substr(lm.scheduled_at, 1, 10) = ? OR lm.status = 'live' " +
+      "WHERE substr(lm.scheduled_at, 1, 10) = ? OR lm.status IN ('live', 'paused') " +
       "ORDER BY lm.scheduled_at ASC, lm.id ASC"
     ).bind(date),
 
@@ -158,6 +178,7 @@ async function listMatches(url, env) {
     success: true,
     date: date,
     today: taiwanToday(),
+    max_total_score: MAX_TOTAL_SCORE,
     dates: (results[1].results || []).map(function (row) {
       return row.match_date;
     }),
@@ -167,7 +188,10 @@ async function listMatches(url, env) {
 }
 
 
-/* 加減分：用 SQL 直接加減，兩位裁判同時按也不會互相蓋掉 */
+/*
+  加減分：用 SQL 直接加減，兩位裁判同時按也不會互相蓋掉。
+  加分時檢查兩隊比分加總不能超過 MAX_TOTAL_SCORE（減分不受限制）。
+*/
 async function changeScore(request, env, staff, id) {
 
   var body = await parseJsonBody(request);
@@ -192,9 +216,10 @@ async function changeScore(request, env, staff, id) {
       "UPDATE league_matches SET " +
       column + " = MAX(0, COALESCE(" + column + ", 0) + ?), " +
       "updated_at = CURRENT_TIMESTAMP " +
-      "WHERE id = ? AND status = 'live'"
+      "WHERE id = ? AND status = 'live' " +
+      "AND (? < 0 OR COALESCE(score_a, 0) + COALESCE(score_b, 0) < ?)"
     )
-    .bind(delta, id)
+    .bind(delta, id, delta, MAX_TOTAL_SCORE)
     .run();
 
   var match = await getMatch(env, id);
@@ -204,7 +229,12 @@ async function changeScore(request, env, staff, id) {
   }
 
   if (!result.meta.changes) {
-    return errorResponse("MATCH_NOT_LIVE", 409, { data: match });
+
+    if (match.status !== "live") {
+      return errorResponse("MATCH_NOT_LIVE", 409, { data: match });
+    }
+
+    return errorResponse("SCORE_LIMIT", 409, { data: match });
   }
 
   await writeAuditLog(env, staff, "score", "league_matches", id, {
@@ -227,7 +257,9 @@ async function changeStatus(request, env, staff, id) {
     return errorResponse("INVALID_JSON", 400);
   }
 
-  var action = STATUS_ACTIONS[body.action];
+  var action = Object.prototype.hasOwnProperty.call(STATUS_ACTIONS, body.action)
+    ? STATUS_ACTIONS[body.action]
+    : null;
 
   if (!action) {
     return errorResponse("INVALID_ACTION", 400);
@@ -243,7 +275,8 @@ async function changeStatus(request, env, staff, id) {
     await env.DB.prepare(
       "UPDATE league_matches SET " + action.set +
       ", updated_at = CURRENT_TIMESTAMP " +
-      "WHERE id = ? AND status IN (" + allowed + ")"
+      "WHERE id = ? AND status IN (" + allowed + ")" +
+      (action.where ? " AND " + action.where : "")
     )
     .bind(id)
     .run();
@@ -255,6 +288,12 @@ async function changeStatus(request, env, staff, id) {
   }
 
   if (!result.meta.changes) {
+
+    /* 狀態對，但沒達到額外條件（例如比分還沒滿 9 分） */
+    if (action.error && action.from.indexOf(match.status) !== -1) {
+      return errorResponse(action.error, 409, { data: match });
+    }
+
     return errorResponse("INVALID_MATCH_STATE", 409, { data: match });
   }
 

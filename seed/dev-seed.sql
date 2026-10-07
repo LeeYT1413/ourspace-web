@@ -1,7 +1,7 @@
 /* =========================================================
    OURSPACE 本機測試資料
    只在本機使用：
-   npx wrangler d1 execute ourspace-erp-db --local --file=seed/dev-seed.sql
+   npx wrangler d1 execute ourspace-web-db --local --file=seed/dev-seed.sql
    ⚠ 不要加 --remote，會清掉正式資料
 ========================================================= */
 
