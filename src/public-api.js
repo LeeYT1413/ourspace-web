@@ -63,6 +63,10 @@ export async function handlePublicApi(request, url, env) {
     if (pathname === "/api/ranking") {
       return getRanking(url, env);
     }
+
+    if (pathname.indexOf("/api/ranking/") === 0) {
+      return getPlayerHighlights(pathname.replace("/api/ranking/", ""), env);
+    }
   }
 
   if (method === "POST") {
@@ -435,11 +439,13 @@ async function getRanking(url, env) {
     await env.DB.prepare(
       "SELECT " +
       "p.id AS player_id, p.player_name, p.nickname, p.avatar_url, " +
+      "t.team_name, " +
       "COUNT(pp.id) AS upper_count, " +
       "SUM(CASE WHEN pp.placement = 1 THEN 1 ELSE 0 END) AS first_count, " +
       "MAX(pp.event_date) AS last_date " +
       "FROM player_placements pp " +
       "INNER JOIN players p ON pp.player_id = p.id " +
+      "LEFT JOIN teams t ON p.team_id = t.id " +
       "WHERE p.status = 'active' " +
       "GROUP BY p.id " +
       "ORDER BY upper_count DESC, first_count DESC, last_date DESC, p.player_name ASC " +
@@ -450,6 +456,58 @@ async function getRanking(url, env) {
 
   return jsonResponse(
     { success: true, data: result.results || [] },
+    200,
+    API_CACHE_SECONDS
+  );
+
+}
+
+
+/*
+  選手最厲害的三筆上位紀錄
+  排序：名次越前面越好 → 同名次比參賽人數多 → 比較新的
+*/
+async function getPlayerHighlights(playerId, env) {
+
+  if (!isPositiveInteger(playerId)) {
+    return errorResponse("INVALID_PLAYER_ID", 400);
+  }
+
+  var id = Number(playerId);
+
+  var results = await env.DB.batch([
+
+    env.DB.prepare(
+      "SELECT p.id AS player_id, p.player_name, p.nickname, p.avatar_url, " +
+      "t.team_name, " +
+      "(SELECT COUNT(*) FROM player_placements pp WHERE pp.player_id = p.id) AS upper_count " +
+      "FROM players p " +
+      "LEFT JOIN teams t ON p.team_id = t.id " +
+      "WHERE p.id = ? AND p.status = 'active'"
+    ).bind(id),
+
+    env.DB.prepare(
+      "SELECT event_date, event_name, participant_count, placement " +
+      "FROM player_placements " +
+      "WHERE player_id = ? " +
+      "ORDER BY placement ASC, participant_count DESC, event_date DESC, id DESC " +
+      "LIMIT 3"
+    ).bind(id)
+
+  ]);
+
+  var player = (results[0].results || [])[0];
+
+  if (!player) {
+    return errorResponse("PLAYER_NOT_FOUND", 404);
+  }
+
+  return jsonResponse(
+    {
+      success: true,
+      data: player,
+      highlights: results[1].results || []
+    },
     200,
     API_CACHE_SECONDS
   );

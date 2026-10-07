@@ -1872,6 +1872,102 @@ body.sidebar-collapsed .main-content {
 }
 
 
+/* 點選手：最佳三筆上位紀錄 */
+
+.player-modal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 16px;
+  margin-top: 10px;
+  color: var(--text-soft);
+  font-size: 18px;
+}
+
+.player-modal-meta .rank-team {
+  margin-top: 0;
+}
+
+.highlight-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.highlight-card {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 16px 18px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--iron);
+}
+
+.highlight-place {
+  flex: 0 0 74px;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 3px;
+  color: var(--text-soft);
+}
+
+.highlight-place strong {
+  font-size: 40px;
+  font-weight: 900;
+  font-style: italic;
+  line-height: 1;
+}
+
+.highlight-place small {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.highlight-card.place-1 {
+  border-left-color: var(--gold);
+  background: linear-gradient(90deg, rgba(255, 211, 61, 0.1), rgba(255, 255, 255, 0.02));
+}
+
+.highlight-card.place-1 .highlight-place {
+  color: var(--gold);
+}
+
+.highlight-card.place-2 {
+  border-left-color: var(--silver);
+}
+
+.highlight-card.place-2 .highlight-place {
+  color: var(--silver);
+}
+
+.highlight-card.place-3 {
+  border-left-color: var(--bronze);
+}
+
+.highlight-card.place-3 .highlight-place {
+  color: var(--bronze);
+}
+
+.highlight-info {
+  min-width: 0;
+}
+
+.highlight-info h3 {
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1.4;
+}
+
+.highlight-info p {
+  margin-top: 4px;
+  color: var(--text-soft);
+  font-size: 16px;
+}
+
+
 /* =========================================================
    17. TOURNAMENT SEARCH
 ========================================================= */
@@ -2813,6 +2909,19 @@ body.sidebar-collapsed .site-footer {
 
   .rank-info h3 {
     font-size: 18px;
+  }
+
+  .highlight-card {
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .highlight-place {
+    flex-basis: 58px;
+  }
+
+  .highlight-place strong {
+    font-size: 32px;
   }
 
   /* Tournament */

@@ -2045,7 +2045,18 @@
     var isTop = Boolean(tier);
     var displayName = item.nickname || item.player_name;
 
-    var card = el("article", "ranking-card " + (isTop ? tier.css : "rank-normal"));
+    var card = el(
+      "article",
+      "ranking-card is-clickable " + (isTop ? tier.css : "rank-normal")
+    );
+
+    card.tabIndex = 0;
+    card.setAttribute("role", "button");
+    card.setAttribute("aria-label", displayName + "，查看最佳上位紀錄");
+
+    bindActivate(card, function () {
+      openPlayerModal(item);
+    });
 
     card.appendChild(el("div", "rank-number", pad2(rank)));
 
@@ -2078,6 +2089,10 @@
 
     info.appendChild(el(isTop ? "h2" : "h3", null, displayName));
 
+    if (item.team_name) {
+      info.appendChild(el("div", "rank-team", item.team_name));
+    }
+
     var count = el("div", "rank-count");
     count.appendChild(el("strong", null, item.upper_count || 0));
     count.appendChild(el("span", null, "次上位"));
@@ -2088,6 +2103,103 @@
     card.appendChild(el("div", "rank-badge", isTop ? tier.badge : "IRON"));
 
     return card;
+  }
+
+
+  /* 點選手：顯示最厲害的三筆上位紀錄 */
+  var playerModalToken = 0;
+
+
+  function createHighlightCard(record) {
+
+    var placement = Number(record.placement) || 0;
+    var tierCss = placement >= 1 && placement <= 3 ? " place-" + placement : "";
+
+    var card = el("div", "highlight-card" + tierCss);
+
+    var place = el("div", "highlight-place");
+    place.appendChild(el("small", null, "第"));
+    place.appendChild(el("strong", null, placement));
+    place.appendChild(el("small", null, "名"));
+    card.appendChild(place);
+
+    var info = el("div", "highlight-info");
+    info.appendChild(el("h3", null, record.event_name));
+
+    var date = parseDateTime(record.event_date);
+
+    info.appendChild(
+      el(
+        "p",
+        null,
+        formatDate(date) + "　" + (record.participant_count || 0) + " 人參賽"
+      )
+    );
+
+    card.appendChild(info);
+
+    return card;
+  }
+
+
+  function openPlayerModal(item) {
+
+    var token = ++playerModalToken;
+    var displayName = item.nickname || item.player_name;
+
+    var content = el("div", "modal-content");
+
+    content.appendChild(el("div", "modal-kicker", "TOP 3 PLACEMENTS"));
+
+    var title = el("h2", null, displayName);
+    title.id = "modalTitle";
+    content.appendChild(title);
+
+    var meta = el("div", "player-modal-meta");
+
+    if (item.team_name) {
+      meta.appendChild(el("span", "rank-team", item.team_name));
+    }
+
+    meta.appendChild(el("span", null, "累計 " + (item.upper_count || 0) + " 次上位"));
+    content.appendChild(meta);
+
+    var list = el("div", "highlight-list");
+    content.appendChild(list);
+
+    renderState(list, "loading", "上位紀錄載入中…");
+
+    openModal(content);
+
+    apiGet("/api/ranking/" + encodeURIComponent(item.player_id))
+      .then(function (response) {
+
+        /* 載入期間已經關掉或換了別的選手，就不更新 */
+        if (token !== playerModalToken || modal.hidden) {
+          return;
+        }
+
+        var records = response.highlights || [];
+
+        if (!records.length) {
+          renderState(list, "empty", "目前沒有上位紀錄。");
+          return;
+        }
+
+        clear(list);
+
+        records.forEach(function (record) {
+          list.appendChild(createHighlightCard(record));
+        });
+      })
+      .catch(function (error) {
+
+        console.error("上位紀錄載入失敗", error);
+
+        if (token === playerModalToken) {
+          renderState(list, "error", "上位紀錄載入失敗，請稍後再試。");
+        }
+      });
   }
 
 
