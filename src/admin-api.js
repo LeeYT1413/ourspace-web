@@ -129,7 +129,7 @@ var RESOURCES = {
     hasUpdatedAt: true,
     columns: {
       tournament_id: { type: "ref", required: true },
-      match_format: { type: "enum", values: MATCH_FORMATS, default: "trio" },
+      match_format: { type: "enum", values: MATCH_FORMATS, default: "solo" },
       round_number: { type: "int", min: 0 },
       match_number: { type: "int", min: 0 },
       scheduled_at: { type: "datetime", required: true },

@@ -6,9 +6,9 @@
 ========================================================= */
 
 /* solo = 個人賽、duo = 雙人賽、trio = 三人賽
-   既有比賽會先預設為三人賽，請到後台「賽程」逐筆確認 */
+   既有比賽會先預設為個人賽，請到後台「賽程」逐筆確認 */
 ALTER TABLE league_matches
-ADD COLUMN match_format TEXT NOT NULL DEFAULT 'trio';
+ADD COLUMN match_format TEXT NOT NULL DEFAULT 'solo';
 
 
 CREATE INDEX IF NOT EXISTS idx_league_matches_format

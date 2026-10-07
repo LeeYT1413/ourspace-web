@@ -98,7 +98,7 @@
       ],
       fields: [
         { name: "tournament_id", label: "賽事", type: "ref", ref: "tournaments", required: true },
-        { name: "match_format", label: "賽別", type: "select", options: "matchFormat", default: "trio", half: true },
+        { name: "match_format", label: "賽別", type: "select", options: "matchFormat", default: "solo", half: true },
         { name: "scheduled_at", label: "比賽時間", type: "datetime", required: true, half: true },
         { name: "round_number", label: "第幾輪", type: "number", half: true },
         { name: "match_number", label: "第幾場", type: "number", half: true },
