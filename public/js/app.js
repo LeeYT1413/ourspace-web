@@ -58,7 +58,8 @@
   var MATCH_FORMATS = {
     solo: "個人賽",
     duo: "雙人賽",
-    trio: "三人賽"
+    trio: "三人賽",
+    team: "戰隊賽"
   };
 
   var RANK_TIERS = [
@@ -1852,7 +1853,8 @@
   var STANDING_COLUMNS = [
     { key: "solo_points", label: "個人賽" },
     { key: "duo_points", label: "雙人賽" },
-    { key: "trio_points", label: "三人賽" }
+    { key: "trio_points", label: "三人賽" },
+    { key: "team_points", label: "戰隊賽" }
   ];
 
 
@@ -1914,7 +1916,7 @@
     card.appendChild(head);
 
 
-    /* 個人 / 雙人 / 三人 */
+    /* 個人 / 雙人 / 三人 / 戰隊 */
     var stats = el("div", "standing-stats");
 
     STANDING_COLUMNS.forEach(function (column) {

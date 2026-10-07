@@ -5,7 +5,7 @@
    - 暫停狀態 paused 不需要改結構（status 欄位沒有限制值）
 ========================================================= */
 
-/* solo = 個人賽、duo = 雙人賽、trio = 三人賽
+/* solo = 個人賽、duo = 雙人賽、trio = 三人賽、team = 戰隊賽
    既有比賽會先預設為個人賽，請到後台「賽程」逐筆確認 */
 ALTER TABLE league_matches
 ADD COLUMN match_format TEXT NOT NULL DEFAULT 'solo';

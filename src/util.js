@@ -12,8 +12,8 @@ export var LIVE_CACHE_SECONDS = 5;
 /* 戰隊聯賽：每場兩隊比分加總上限（剛好達到才能結束比賽） */
 export var MAX_TOTAL_SCORE = 9;
 
-/* 戰隊聯賽賽別：個人 / 雙人 / 三人 */
-export var MATCH_FORMATS = ["solo", "duo", "trio"];
+/* 戰隊聯賽賽別：個人 / 雙人 / 三人 / 戰隊 */
+export var MATCH_FORMATS = ["solo", "duo", "trio", "team"];
 
 
 export function jsonResponse(data, status, cacheSeconds, extraHeaders) {

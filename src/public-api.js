@@ -315,7 +315,7 @@ async function getLeagueMatch(matchId, env) {
    LEAGUE STANDINGS
    戰隊積分：依「已結束」的比賽即時計算
    規則：積分 = 比分差（例：9:0 → +9 / -9，5:4 → +1 / -1）
-   分成個人賽 / 雙人賽 / 三人賽，加總為總積分
+   分成個人賽 / 雙人賽 / 三人賽 / 戰隊賽，加總為總積分
 ========================================================= */
 
 /* 把每場比賽拆成 A 隊、B 隊各一列，積分 = 自己分數 - 對手分數 */
@@ -342,6 +342,7 @@ var STANDINGS_SQL =
   "  SUM(CASE WHEN s.match_format = 'solo' THEN s.pts ELSE 0 END) AS solo_points, " +
   "  SUM(CASE WHEN s.match_format = 'duo' THEN s.pts ELSE 0 END) AS duo_points, " +
   "  SUM(CASE WHEN s.match_format = 'trio' THEN s.pts ELSE 0 END) AS trio_points, " +
+  "  SUM(CASE WHEN s.match_format = 'team' THEN s.pts ELSE 0 END) AS team_points, " +
   "  SUM(s.pts) AS total_points, " +
   "  SUM(s.win) AS wins, SUM(s.loss) AS losses, SUM(s.draw) AS draws " +
   "FROM scored s " +

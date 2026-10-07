@@ -27,7 +27,7 @@
       ["finished", "已結束"]
     ],
     matchStatus: [["scheduled", "未開賽"], ["live", "比賽中"], ["paused", "暫停中"], ["finished", "比賽結束"], ["cancelled", "已取消"]],
-    matchFormat: [["solo", "個人賽"], ["duo", "雙人賽"], ["trio", "三人賽"]],
+    matchFormat: [["solo", "個人賽"], ["duo", "雙人賽"], ["trio", "三人賽"], ["team", "戰隊賽"]],
     contactStatus: [["unread", "未讀"], ["read", "已讀"], ["done", "已處理"]],
     role: [["referee", "裁判"], ["admin", "管理員"]]
   };

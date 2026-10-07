@@ -81,6 +81,7 @@ a {
   --red-dark: #a30f2e;
   --purple: #9b5cff;
   --green: #31f28b;
+  --orange: #ffb020;
 
   --gold: #ffd33d;
   --silver: #d9e1e8;
@@ -1317,6 +1318,10 @@ body.sidebar-collapsed .main-content {
   border-left: 3px solid var(--red);
 }
 
+.match-card.paused {
+  border-left: 3px solid var(--orange);
+}
+
 .match-card.cancelled {
   opacity: 0.55;
   border-left: 3px solid var(--iron);
@@ -1344,13 +1349,22 @@ body.sidebar-collapsed .main-content {
   letter-spacing: 1px;
 }
 
+.match-time small.match-format {
+  color: var(--blue);
+}
+
 .match-card.upcoming .match-time span {
   color: var(--yellow);
 }
 
-.match-card.live .match-time small,
+.match-card.live .match-time small:not(.match-format),
 .match-card.live .match-score span {
   color: var(--red);
+}
+
+.match-card.paused .match-time small:not(.match-format),
+.match-card.paused .match-score span {
+  color: var(--orange);
 }
 
 .match-teams {
@@ -1447,6 +1461,148 @@ body.sidebar-collapsed .main-content {
 }
 
 .match-note {
+  color: var(--text-soft);
+}
+
+
+/* =========================================================
+   15-2. 戰隊積分
+========================================================= */
+
+.ranking-season:empty {
+  display: none;
+}
+
+.standings-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.standings-board > .data-state {
+  grid-column: 1 / -1;
+}
+
+.standing-card {
+  display: flex;
+  flex-direction: column;
+  background: rgba(11, 13, 20, 0.92);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--blue);
+}
+
+.standing-card.is-leader {
+  border-color: rgba(255, 211, 61, 0.45);
+  border-top-color: var(--gold);
+  box-shadow: 0 0 35px rgba(255, 211, 61, 0.08);
+}
+
+.standing-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.standing-rank {
+  flex: 0 0 auto;
+  color: rgba(255, 255, 255, 0.28);
+  font-size: 26px;
+  font-weight: 900;
+  font-style: italic;
+}
+
+.standing-card.is-leader .standing-rank {
+  color: var(--gold);
+}
+
+.standing-logo {
+  width: 48px;
+  height: 48px;
+  flex-basis: 48px;
+  font-size: 20px;
+}
+
+.standing-name {
+  min-width: 0;
+}
+
+.standing-name h3 {
+  overflow: hidden;
+  font-size: 20px;
+  font-weight: 900;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.standing-name small {
+  color: var(--text-dark);
+  font-size: 16px;
+}
+
+.standing-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.standing-stat {
+  min-width: 0;
+  padding: 12px 4px;
+  text-align: center;
+}
+
+.standing-stat + .standing-stat {
+  border-left: 1px solid var(--line);
+}
+
+.standing-stat small {
+  display: block;
+  color: var(--text-dark);
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.standing-stat strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 24px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.standing-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  padding: 12px 18px;
+  background: rgba(255, 255, 255, 0.03);
+  border-top: 1px solid var(--line);
+}
+
+.standing-total span {
+  color: var(--text-soft);
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 2px;
+}
+
+.standing-total strong {
+  font-size: 34px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.points-plus {
+  color: var(--yellow);
+}
+
+.points-minus {
+  color: var(--red);
+}
+
+.points-zero {
   color: var(--text-soft);
 }
 
@@ -2530,6 +2686,17 @@ body.sidebar-collapsed .site-footer {
 
   .match-score strong {
     font-size: 26px;
+  }
+
+  /* Standings */
+
+  .standings-board {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .standing-total strong {
+    font-size: 30px;
   }
 
   /* Ranking */
