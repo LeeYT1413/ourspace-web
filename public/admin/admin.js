@@ -76,6 +76,7 @@
     PLACEMENT_OVER_COUNT: "名次不能大於參賽人數。",
     INVALID_MATCH_STATE: "比賽狀態已被其他人更新，畫面已重新整理。",
     DATABASE_NOT_READY: "資料庫還沒建立後台資料表，請先執行 migration。",
+    BELOW_THRESHOLD: "報到人數未達抽獎門檻。",
     NETWORK_ERROR: "連線失敗，請檢查網路後再試。"
   };
 
@@ -284,6 +285,8 @@
 
 
   var TABS = [
+    { id: "checkin", label: "報到", roles: ["admin", "referee"] },
+    { id: "lottery", label: "抽獎", roles: ["admin", "referee"] },
     { id: "referee", label: "裁判計分", roles: ["admin", "referee"] },
     { id: "league_matches", label: "賽程", roles: ["admin"] },
     { id: "tournaments", label: "賽事", roles: ["admin"] },
@@ -294,6 +297,25 @@
     { id: "contact_messages", label: "聯絡訊息", roles: ["admin"] },
     { id: "staff", label: "帳號", roles: ["admin"] }
   ];
+
+
+  /* 報到 / 抽獎在 /admin/checkin.js，這裡提供共用工具給它 */
+  window.OurSpaceAdmin = {
+    api: function (method, path, body) { return api(method, path, body); },
+    toast: function (message, type) { toast(message, type); },
+    errorText: function (error) { return errorText(error); },
+    el: function (tag, className, text) { return el(tag, className, text); },
+    button: function (text, className, onClick) { return button(text, className, onClick); },
+    clear: function (node) { clear(node); },
+    staff: function () { return state.staff; }
+  };
+
+
+  function stopCheckin() {
+    if (window.OurSpaceCheckin) {
+      window.OurSpaceCheckin.stop();
+    }
+  }
 
 
   /* =======================================================
@@ -585,6 +607,7 @@
 
     if (name !== "main") {
       stopRefereeTimer();
+      stopCheckin();
       closePanel();
     }
 
@@ -801,10 +824,13 @@
     });
 
     stopRefereeTimer();
+    stopCheckin();
     closePanel();
 
     if (tabId === "referee") {
       renderRefereeView();
+    } else if (window.OurSpaceCheckin && window.OurSpaceCheckin.tabs.indexOf(tabId) !== -1) {
+      window.OurSpaceCheckin.render(tabId, byId("adminMain"));
     } else {
       renderResourceView(tabId);
     }

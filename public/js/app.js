@@ -31,7 +31,8 @@
     news: { title: "最新消息", subtitle: "OURSPACE NEWS" },
     league: { title: "戰隊聯賽", subtitle: "TEAM BATTLE LEAGUE" },
     ranking: { title: "陀螺爭霸", subtitle: "TOP SPINNERS" },
-    tournaments: { title: "賽事報名", subtitle: "JOIN THE BATTLE" }
+    tournaments: { title: "賽事報名", subtitle: "JOIN THE BATTLE" },
+    roster: { title: "報名名單", subtitle: "ENTRY LIST" }
   };
 
   var TOURNAMENT_TYPES = {
@@ -551,6 +552,11 @@
     /* 切到聯賽頁時立即抓最新比分 */
     if (page === "league" && typeof loadLeague === "function") {
       loadLeague(true);
+    }
+
+    /* 切到名單頁時重新抓最新報到狀況 */
+    if (page === "roster" && typeof loadRoster === "function") {
+      loadRoster();
     }
   });
 
@@ -2259,6 +2265,231 @@
 
 
   /* =======================================================
+     14-1. 報名名單（今天與未來的公開場次）
+  ======================================================= */
+
+  var rosterTabs = byId("rosterTabs");
+  var rosterPanel = byId("rosterPanel");
+  var rosterList = byId("rosterList");
+  var rosterSearch = byId("rosterSearch");
+
+  var rosterEvents = [];
+  var rosterActiveId = null;
+  var rosterEntries = [];
+  var rosterRequest = 0;
+
+
+  function rosterDateLabel(event) {
+
+    var parts = parseDateTime(event.event_date);
+
+    if (!parts) {
+      return event.event_date;
+    }
+
+    return (
+      pad2(parts.month) + "/" + pad2(parts.day) +
+      "（" + weekdayOf(parts) + "）" +
+      (event.event_date === todayKey() ? " 今天" : "")
+    );
+  }
+
+
+  function renderRosterTabs() {
+
+    clear(rosterTabs);
+
+    rosterEvents.forEach(function (event) {
+
+      var tab = el("button", "date-tab roster-tab");
+
+      tab.type = "button";
+      tab.setAttribute("role", "tab");
+
+      tab.appendChild(el("span", "roster-tab-date", rosterDateLabel(event)));
+      tab.appendChild(el("span", "roster-tab-title", event.title));
+
+      var isActive = event.id === rosterActiveId;
+
+      tab.classList.toggle("active", isActive);
+      tab.setAttribute("aria-selected", isActive ? "true" : "false");
+
+      tab.addEventListener("click", function () {
+        rosterActiveId = event.id;
+        renderRosterTabs();
+        loadRosterEntries();
+      });
+
+      rosterTabs.appendChild(tab);
+    });
+  }
+
+
+  function renderRosterPanel(event) {
+
+    clear(rosterPanel);
+
+    if (!event) {
+      rosterPanel.hidden = true;
+      return;
+    }
+
+    rosterPanel.hidden = false;
+
+    var parts = parseDateTime(event.event_date);
+
+    var info = el("div", "roster-info");
+    info.appendChild(el("div", "date-label", event.event_date === todayKey() ? "TODAY" : "UPCOMING"));
+    info.appendChild(el("h2", "roster-title", event.title));
+    info.appendChild(el(
+      "div",
+      "roster-date",
+      formatDate(parts) + "（" + weekdayOf(parts) + "）" + (event.start_time ? " " + event.start_time : "")
+    ));
+
+    if (event.note) {
+      info.appendChild(el("p", "roster-note", event.note));
+    }
+
+    var checked = rosterEntries.filter(function (item) {
+      return Number(item.checked_in) === 1;
+    }).length;
+
+    var stats = el("div", "roster-stats");
+
+    var statChecked = el("div", "roster-stat");
+    statChecked.appendChild(el("strong", null, String(checked)));
+    statChecked.appendChild(el("span", null, "已報到"));
+
+    var statTotal = el("div", "roster-stat");
+    statTotal.appendChild(el("strong", null, String(rosterEntries.length)));
+    statTotal.appendChild(el("span", null, "報名"));
+
+    stats.appendChild(statChecked);
+    stats.appendChild(statTotal);
+
+    rosterPanel.appendChild(info);
+    rosterPanel.appendChild(stats);
+  }
+
+
+  function renderRosterList() {
+
+    var keyword = rosterSearch ? rosterSearch.value.trim().toLowerCase() : "";
+
+    clear(rosterList);
+
+    if (!rosterEntries.length) {
+      renderState(rosterList, "empty", "這個場次還沒有報名名單。");
+      return;
+    }
+
+    var items = rosterEntries.filter(function (item) {
+      return !keyword || String(item.nickname).toLowerCase().indexOf(keyword) !== -1;
+    });
+
+    if (!items.length) {
+      renderState(rosterList, "empty", "找不到符合「" + rosterSearch.value.trim() + "」的報名。");
+      return;
+    }
+
+    items.forEach(function (item) {
+
+      var isChecked = Number(item.checked_in) === 1;
+      var row = el("div", "roster-row" + (isChecked ? " is-checked" : ""));
+
+      row.appendChild(el("span", "roster-number", isChecked && item.checkin_number ? String(item.checkin_number) : "—"));
+      row.appendChild(el("span", "roster-name", item.nickname));
+
+      if (Number(item.is_judge) === 1) {
+        row.appendChild(el("span", "roster-judge", "㊣ 裁判"));
+      }
+
+      row.appendChild(el("span", "roster-status", isChecked ? "已報到" : "未報到"));
+
+      rosterList.appendChild(row);
+    });
+  }
+
+
+  function loadRosterEntries() {
+
+    var event = null;
+
+    rosterEvents.forEach(function (item) {
+      if (item.id === rosterActiveId) {
+        event = item;
+      }
+    });
+
+    if (!event) {
+      renderRosterPanel(null);
+      return Promise.resolve();
+    }
+
+    var requestId = ++rosterRequest;
+
+    renderState(rosterList, "loading", "名單載入中…");
+
+    return apiGet("/api/checkin/events/" + event.id)
+      .then(function (response) {
+
+        if (requestId !== rosterRequest) {
+          return;
+        }
+
+        rosterEntries = (response.data && response.data.entries) || [];
+
+        renderRosterPanel(event);
+        renderRosterList();
+      })
+      .catch(function (error) {
+        console.error("名單載入失敗", error);
+        renderState(rosterList, "error", "名單載入失敗，請重新整理頁面。");
+      });
+  }
+
+
+  function loadRoster() {
+
+    renderState(rosterList, "loading", "場次載入中…");
+
+    return apiGet("/api/checkin/events")
+      .then(function (response) {
+
+        rosterEvents = response.data || [];
+
+        var stillThere = rosterEvents.some(function (item) {
+          return item.id === rosterActiveId;
+        });
+
+        if (!stillThere) {
+          rosterActiveId = rosterEvents.length ? rosterEvents[0].id : null;
+        }
+
+        renderRosterTabs();
+
+        if (!rosterEvents.length) {
+          renderRosterPanel(null);
+          renderState(rosterList, "empty", "目前沒有今天或之後的場次名單。");
+          return;
+        }
+
+        return loadRosterEntries();
+      })
+      .catch(function (error) {
+        console.error("場次載入失敗", error);
+        renderState(rosterList, "error", "場次載入失敗，請重新整理頁面。");
+      });
+  }
+
+
+  if (rosterSearch) {
+    rosterSearch.addEventListener("input", renderRosterList);
+  }
+
+
+  /* =======================================================
      15. 初始化
   ======================================================= */
 
@@ -2277,6 +2508,7 @@
     loadTournaments();
     loadLeague().then(scheduleLeaguePoll);
     loadRanking();
+    loadRoster();
   }
 
 

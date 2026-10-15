@@ -78,6 +78,11 @@
         <span class="nav-label">賽事報名</span>
       </button>
 
+      <button class="nav-item" data-page="roster" type="button">
+        <span class="nav-icon">▤</span>
+        <span class="nav-label">報名名單</span>
+      </button>
+
     </nav>
 
 
@@ -408,6 +413,47 @@
       </div>
 
       <div id="tournamentList" class="tournament-list"></div>
+
+    </section>
+
+    <!-- ======================================
+         報名名單（今天與未來的公開場次）
+    ======================================= -->
+
+    <section id="page-roster" class="page" data-page-content="roster">
+
+      <div class="page-hero">
+        <div class="hero-tag">OURSPACE / ENTRY LIST</div>
+        <h1>
+          報名
+          <strong>名單</strong>
+        </h1>
+        <p>TODAY &amp; UPCOMING</p>
+      </div>
+
+      <div
+        id="rosterTabs"
+        class="league-date-tabs roster-tabs"
+        role="tablist"
+        aria-label="場次"
+      ></div>
+
+      <div id="rosterPanel" class="roster-panel" hidden></div>
+
+      <div class="tournament-search roster-search">
+        <label class="search-title" for="rosterSearch">SEARCH PLAYER</label>
+        <div class="search-box">
+          <span class="search-icon">⌕</span>
+          <input
+            id="rosterSearch"
+            type="search"
+            placeholder="搜尋參賽名稱…"
+            autocomplete="off"
+          >
+        </div>
+      </div>
+
+      <div id="rosterList" class="roster-list"></div>
 
     </section>
 

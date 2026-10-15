@@ -1,0 +1,649 @@
+/* =========================================================
+   OURSPACE / 窩室
+   後台：報到 / 名單 / 賽程 / 抽獎（扭蛋機）
+   沿用 admin.css 的變數與按鈕、表格樣式
+========================================================= */
+
+.ck-event-select {
+  min-height: 44px;
+  max-width: 100%;
+  padding: 0 12px;
+
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line-bright);
+
+  font-weight: 700;
+}
+
+.ck-subtabs .chip {
+  min-height: 42px;
+  padding: 0 20px;
+  font-size: 15px;
+}
+
+.ck-count {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.ck-center {
+  text-align: center;
+}
+
+.ck-table th {
+  text-align: center;
+}
+
+
+/* ---------- 報到 ---------- */
+
+.ck-search-bar {
+  display: flex;
+  gap: 8px;
+}
+
+.ck-search {
+  flex: 1;
+  min-height: 60px;
+  font-size: 20px !important;
+}
+
+.ck-add {
+  width: 64px;
+  min-height: 60px;
+  font-size: 30px;
+}
+
+.ck-suggest {
+  display: flex;
+  flex-direction: column;
+
+  margin-top: 6px;
+
+  background: var(--panel-2);
+  border: 1px solid var(--line-bright);
+}
+
+.ck-suggest:empty {
+  display: none;
+}
+
+.ck-suggest > div:empty {
+  display: none;
+}
+
+.ck-suggest-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  width: 100%;
+  min-height: 52px;
+  padding: 0 16px;
+
+  color: var(--text);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+
+  font-size: 18px;
+  text-align: left;
+}
+
+.ck-suggest-item:hover,
+.ck-suggest-item:focus-visible {
+  background: rgba(255, 230, 0, 0.06);
+}
+
+.ck-suggest-player .ck-suggest-name {
+  color: var(--blue);
+}
+
+.ck-suggest-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ck-tag {
+  flex: 0 0 auto;
+  color: var(--text-dark);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ck-tag-on {
+  color: var(--green);
+}
+
+.ck-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+
+  margin-top: 16px;
+  padding: 22px;
+
+  background: var(--panel);
+  border: 1px solid var(--line-bright);
+}
+
+.ck-card-name {
+  color: var(--yellow);
+  font-size: 26px;
+  font-weight: 900;
+  word-break: break-all;
+}
+
+.ck-check-row,
+.ck-check-field {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+
+  cursor: pointer;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.ck-check-field {
+  font-size: 15px;
+}
+
+.ck-big-check {
+  width: 28px;
+  height: 28px;
+  accent-color: var(--yellow);
+}
+
+.ck-number {
+  min-height: 60px;
+  font-size: 28px !important;
+  text-align: center;
+}
+
+.ck-big-btn {
+  min-height: 56px;
+  font-size: 18px;
+}
+
+.ck-delete {
+  align-self: flex-end;
+}
+
+
+/* ---------- 名單 / 賽程 ---------- */
+
+.ck-list-tools {
+  margin-bottom: 14px;
+}
+
+.ck-mini-number {
+  width: 72px;
+  min-height: 40px;
+  padding: 0 6px;
+
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line-bright);
+
+  font-size: 17px;
+  text-align: center;
+}
+
+.ck-seg {
+  display: inline-flex;
+}
+
+.ck-seg-btn {
+  min-height: 40px;
+  padding: 0 12px;
+
+  color: var(--text-soft);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  cursor: pointer;
+
+  font-weight: 700;
+}
+
+.ck-seg-btn + .ck-seg-btn {
+  border-left: 0;
+}
+
+.ck-seg-btn.active {
+  color: #08090d;
+  background: var(--yellow);
+  border-color: var(--yellow);
+}
+
+.ck-status-1 td {
+  background: rgba(255, 176, 32, 0.06);
+}
+
+.ck-status-2 td {
+  background: rgba(49, 242, 139, 0.07);
+}
+
+
+/* =========================================================
+   抽獎
+========================================================= */
+
+.ck-lot-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.ck-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  padding: 12px;
+
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+
+.ck-stat strong {
+  font-size: 24px;
+  font-weight: 900;
+}
+
+.ck-stat span {
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.ck-stat-warn {
+  border-color: rgba(255, 176, 32, 0.6);
+}
+
+.ck-stat-warn strong {
+  color: var(--orange);
+}
+
+.ck-lot-warn {
+  margin-top: 10px;
+  padding: 10px 14px;
+
+  color: var(--orange);
+  background: rgba(255, 176, 32, 0.08);
+  border: 1px solid rgba(255, 176, 32, 0.4);
+
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.ck-lot-stage {
+  position: relative;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  min-height: 420px;
+  margin: 16px 0;
+  padding: 24px 12px;
+
+  background:
+    radial-gradient(circle at 50% 40%, rgba(255, 230, 0, 0.08), transparent 60%),
+    var(--panel);
+  border: 1px solid var(--line);
+
+  overflow: hidden;
+}
+
+.ck-lot-stage:fullscreen {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.ck-lot-stage:fullscreen .gacha {
+  transform: scale(1.5);
+}
+
+.ck-lot-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ck-prize {
+  flex: 1 1 220px;
+  min-height: 56px;
+}
+
+.ck-draw {
+  flex: 1 1 200px;
+  font-size: 20px;
+}
+
+.ck-winners {
+  margin-top: 24px;
+}
+
+
+/* ---------- 扭蛋機 ---------- */
+
+.gacha {
+  position: relative;
+  width: 240px;
+}
+
+.gacha-sign {
+  width: 70%;
+  margin: 0 auto -4px;
+  padding: 4px 0;
+
+  color: #08090d;
+  background: var(--yellow);
+
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  text-align: center;
+}
+
+.gacha-dome {
+  position: relative;
+
+  width: 240px;
+  height: 220px;
+
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.35), transparent 30%),
+    rgba(0, 217, 255, 0.08);
+  border: 4px solid rgba(255, 255, 255, 0.55);
+  border-radius: 50% 50% 12px 12px;
+
+  overflow: hidden;
+}
+
+.gacha-ball {
+  position: absolute;
+
+  width: 46px;
+  height: 46px;
+
+  background:
+    linear-gradient(to bottom, var(--c) 50%, #f4f5f8 50%);
+  border: 2px solid rgba(0, 0, 0, 0.35);
+  border-radius: 50%;
+
+  box-shadow: inset -5px -5px 0 rgba(0, 0, 0, 0.15);
+}
+
+.gacha-body {
+  position: relative;
+
+  height: 150px;
+
+  background: linear-gradient(180deg, #ff3159, #a30f2e);
+  border: 4px solid rgba(255, 255, 255, 0.55);
+  border-top: 0;
+}
+
+.gacha-knob {
+  position: absolute;
+  left: 50%;
+  top: 22px;
+
+  width: 64px;
+  height: 64px;
+  margin-left: -32px;
+
+  background: #f4f5f8;
+  border: 4px solid #08090d;
+  border-radius: 50%;
+}
+
+.gacha-knob-bar {
+  position: absolute;
+  left: 50%;
+  top: 6px;
+  bottom: 6px;
+
+  width: 14px;
+  margin-left: -7px;
+
+  background: var(--yellow);
+  border: 3px solid #08090d;
+  border-radius: 7px;
+}
+
+.gacha-slot {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+
+  width: 76px;
+  height: 40px;
+  margin-left: -38px;
+
+  background: #08090d;
+  border-radius: 6px;
+}
+
+.gacha-capsule {
+  position: absolute;
+  left: 50%;
+  top: -40px;
+
+  width: 54px;
+  height: 54px;
+  margin-left: -27px;
+
+  opacity: 0;
+}
+
+.gacha-capsule-top,
+.gacha-capsule-bottom {
+  position: absolute;
+  left: 0;
+
+  width: 54px;
+  height: 27px;
+
+  border: 3px solid #08090d;
+}
+
+.gacha-capsule-top {
+  top: 0;
+  background: var(--c, var(--yellow));
+  border-radius: 27px 27px 0 0;
+}
+
+.gacha-capsule-bottom {
+  bottom: 0;
+  background: #f4f5f8;
+  border-radius: 0 0 27px 27px;
+}
+
+/* 轉動中：旋鈕轉圈、球在罩子裡亂跳 */
+.gacha.is-spinning .gacha-knob {
+  animation: gachaKnob 0.9s ease-in-out 2;
+}
+
+.gacha.is-spinning .gacha-ball {
+  animation: gachaShake 0.35s ease-in-out infinite;
+  animation-delay: var(--d);
+}
+
+.gacha.is-spinning .gacha-dome {
+  animation: gachaWobble 0.3s ease-in-out infinite;
+}
+
+/* 扭蛋掉出來 */
+.gacha.is-dropping .gacha-capsule {
+  animation: gachaDrop 0.9s cubic-bezier(0.3, 1.4, 0.5, 1) forwards;
+}
+
+.gacha.is-open .gacha-capsule-top {
+  transition: transform 0.35s ease;
+  transform: translateY(-26px) rotate(-25deg);
+}
+
+@keyframes gachaKnob {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes gachaShake {
+  0%, 100% {
+    transform: translate(0, 0);
+  }
+
+  25% {
+    transform: translate(-6px, -18px) rotate(-20deg);
+  }
+
+  50% {
+    transform: translate(5px, -6px) rotate(15deg);
+  }
+
+  75% {
+    transform: translate(-3px, -14px) rotate(-10deg);
+  }
+}
+
+@keyframes gachaWobble {
+  0%, 100% {
+    transform: rotate(0);
+  }
+
+  50% {
+    transform: rotate(1.2deg);
+  }
+}
+
+@keyframes gachaDrop {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.6);
+  }
+
+  30% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(32px) scale(1);
+  }
+}
+
+
+/* ---------- 中獎結果 ---------- */
+
+.gacha-result {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 16px;
+
+  background: rgba(5, 6, 10, 0.78);
+  cursor: pointer;
+}
+
+.gacha-result-card {
+  min-width: 260px;
+  max-width: 92%;
+  padding: 28px 32px;
+
+  text-align: center;
+
+  background: var(--panel-2);
+  border: 3px solid var(--c, var(--yellow));
+  box-shadow: 0 0 40px var(--c, var(--yellow));
+
+  animation: gachaPop 0.45s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+
+.gacha-result-kicker {
+  color: var(--text-soft);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.gacha-result-number {
+  margin-top: 10px;
+  color: var(--c, var(--yellow));
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.gacha-result-name {
+  margin-top: 4px;
+
+  font-size: 40px;
+  font-weight: 900;
+  line-height: 1.2;
+  word-break: break-all;
+}
+
+.gacha-result-prize {
+  display: inline-block;
+
+  margin-top: 12px;
+  padding: 4px 12px;
+
+  color: #08090d;
+  background: var(--c, var(--yellow));
+
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.gacha-result-hint {
+  margin-top: 16px;
+  color: var(--text-dark);
+  font-size: 12px;
+}
+
+.ck-lot-stage:fullscreen .gacha-result-name {
+  font-size: 72px;
+}
+
+@keyframes gachaPop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+
+@media (max-width: 640px) {
+
+  .ck-event-select {
+    flex: 1 1 100%;
+  }
+
+  .ck-lot-stats strong {
+    font-size: 20px;
+  }
+
+  .ck-seg-btn {
+    padding: 0 8px;
+  }
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+
+  .gacha.is-spinning .gacha-ball,
+  .gacha.is-spinning .gacha-dome {
+    animation: none;
+  }
+}
