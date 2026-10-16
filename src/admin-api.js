@@ -17,12 +17,23 @@ import {
 import {
   requireStaff,
   writeAuditLog,
-  createPasswordRecord,
-  validateUsername,
-  validatePassword,
-  deleteStaffSessions,
-  STAFF_ROLES
+  canUsePage
 } from "./auth.js";
+
+
+/* 每個資料表對應的官網後台頁面權限（ERP 系統設定 → 角色權限 → 官網後台） */
+var RESOURCE_PAGES = {
+  news: "news",
+  news_images: "news_images",
+  tournaments: "tournaments",
+  teams: "teams",
+  players: "players",
+  player_placements: "players",
+  player_ranking: "players",
+  league_matches: "league_matches",
+  contact_messages: "contact_messages",
+  lookups: ["league_matches", "tournaments", "teams", "players"]
+};
 
 
 /* =========================================================
@@ -481,7 +492,7 @@ async function loadPlayerTeams(env, ids) {
 
 export async function handleAdminApi(request, url, env) {
 
-  var auth = await requireStaff(request, env, ["admin"]);
+  var auth = await requireStaff(request, env);
 
   if (auth.response) {
     return auth.response;
@@ -497,12 +508,16 @@ export async function handleAdminApi(request, url, env) {
     return null;
   }
 
-  if (resource === "lookups" && !id && method === "GET") {
-    return getLookups(env);
+  if (!Object.prototype.hasOwnProperty.call(RESOURCE_PAGES, resource)) {
+    return null;
   }
 
-  if (resource === "staff") {
-    return handleStaff(request, env, staff, method, id);
+  if (!canUsePage(staff, RESOURCE_PAGES[resource])) {
+    return errorResponse("FORBIDDEN", 403);
+  }
+
+  if (resource === "lookups" && !id && method === "GET") {
+    return getLookups(env);
   }
 
   var config = Object.prototype.hasOwnProperty.call(RESOURCES, resource)
@@ -754,247 +769,3 @@ async function getLookups(env) {
 }
 
 
-/* =========================================================
-   後台帳號管理
-========================================================= */
-
-var STAFF_COLUMNS =
-  "id, username, display_name, role, status, last_login_at, created_at";
-
-
-async function handleStaff(request, env, staff, method, id) {
-
-  if (!id) {
-
-    if (method === "GET") {
-
-      var list =
-        await env.DB.prepare(
-          "SELECT " + STAFF_COLUMNS + " FROM staff_users ORDER BY role ASC, username ASC"
-        )
-        .all();
-
-      return jsonResponse({ success: true, data: list.results || [] });
-    }
-
-    if (method === "POST") {
-      return createStaff(request, env, staff);
-    }
-
-    return null;
-  }
-
-  if (!isPositiveInteger(id)) {
-    return errorResponse("INVALID_ID", 400);
-  }
-
-  id = Number(id);
-
-  if (method === "PUT") {
-    return updateStaff(request, env, staff, id);
-  }
-
-  if (method === "DELETE") {
-
-    if (id === staff.id) {
-      return errorResponse("CANNOT_DELETE_SELF", 400);
-    }
-
-    await env.DB.batch([
-      env.DB.prepare("DELETE FROM staff_sessions WHERE staff_id = ?").bind(id),
-      env.DB.prepare("DELETE FROM staff_users WHERE id = ?").bind(id)
-    ]);
-
-    await writeAuditLog(env, staff, "delete", "staff_users", id);
-
-    return jsonResponse({ success: true });
-  }
-
-  return null;
-
-}
-
-
-async function getStaffRecord(env, id) {
-
-  return env.DB.prepare("SELECT " + STAFF_COLUMNS + " FROM staff_users WHERE id = ?")
-    .bind(id)
-    .first();
-
-}
-
-
-async function createStaff(request, env, staff) {
-
-  var body = await parseJsonBody(request);
-
-  if (!body) {
-    return errorResponse("INVALID_JSON", 400);
-  }
-
-  var username = cleanText(body.username);
-  var displayName = cleanText(body.display_name);
-  var role = cleanText(body.role) || "referee";
-  var status = cleanText(body.status) || "active";
-  var password = typeof body.password === "string" ? body.password : "";
-
-  if (!validateUsername(username)) {
-    return errorResponse("INVALID_USERNAME", 400, { field: "username" });
-  }
-
-  if (!displayName || displayName.length > 50) {
-    return errorResponse("INVALID_DISPLAY_NAME", 400, { field: "display_name" });
-  }
-
-  if (STAFF_ROLES.indexOf(role) === -1) {
-    return errorResponse("INVALID_OPTION", 400, { field: "role" });
-  }
-
-  if (ACTIVE_STATUS.indexOf(status) === -1) {
-    return errorResponse("INVALID_OPTION", 400, { field: "status" });
-  }
-
-  if (!validatePassword(password)) {
-    return errorResponse("WEAK_PASSWORD", 400, { field: "password" });
-  }
-
-  var record = await createPasswordRecord(password);
-  var result;
-
-  try {
-
-    result =
-      await env.DB.prepare(
-        "INSERT INTO staff_users " +
-        "(username, display_name, role, status, password_hash, password_salt) " +
-        "VALUES (?, ?, ?, ?, ?, ?)"
-      )
-      .bind(username, displayName, role, status, record.hash, record.salt)
-      .run();
-
-  } catch (error) {
-    return databaseErrorResponse(error);
-  }
-
-  var newId = result.meta.last_row_id;
-
-  await writeAuditLog(env, staff, "create", "staff_users", newId, {
-    username: username,
-    role: role
-  });
-
-  return jsonResponse(
-    { success: true, data: await getStaffRecord(env, newId) },
-    201
-  );
-
-}
-
-
-async function updateStaff(request, env, staff, id) {
-
-  var body = await parseJsonBody(request);
-
-  if (!body) {
-    return errorResponse("INVALID_JSON", 400);
-  }
-
-  var existing = await getStaffRecord(env, id);
-
-  if (!existing) {
-    return errorResponse("NOT_FOUND", 404);
-  }
-
-  var assignments = [];
-  var bindings = [];
-  var logoutUser = false;
-
-  if (body.display_name !== undefined) {
-
-    var displayName = cleanText(body.display_name);
-
-    if (!displayName || displayName.length > 50) {
-      return errorResponse("INVALID_DISPLAY_NAME", 400, { field: "display_name" });
-    }
-
-    assignments.push("display_name = ?");
-    bindings.push(displayName);
-  }
-
-  if (body.role !== undefined) {
-
-    var role = cleanText(body.role);
-
-    if (STAFF_ROLES.indexOf(role) === -1) {
-      return errorResponse("INVALID_OPTION", 400, { field: "role" });
-    }
-
-    /* 避免把自己降級後失去管理權限 */
-    if (id === staff.id && role !== "admin") {
-      return errorResponse("CANNOT_DEMOTE_SELF", 400, { field: "role" });
-    }
-
-    assignments.push("role = ?");
-    bindings.push(role);
-  }
-
-  if (body.status !== undefined) {
-
-    var status = cleanText(body.status);
-
-    if (ACTIVE_STATUS.indexOf(status) === -1) {
-      return errorResponse("INVALID_OPTION", 400, { field: "status" });
-    }
-
-    if (id === staff.id && status !== "active") {
-      return errorResponse("CANNOT_DISABLE_SELF", 400, { field: "status" });
-    }
-
-    if (status !== "active") {
-      logoutUser = true;
-    }
-
-    assignments.push("status = ?");
-    bindings.push(status);
-  }
-
-  /* 密碼留空表示不修改 */
-  if (typeof body.password === "string" && body.password !== "") {
-
-    if (!validatePassword(body.password)) {
-      return errorResponse("WEAK_PASSWORD", 400, { field: "password" });
-    }
-
-    var record = await createPasswordRecord(body.password);
-
-    assignments.push("password_hash = ?", "password_salt = ?", "failed_count = 0", "locked_until = NULL");
-    bindings.push(record.hash, record.salt);
-
-    logoutUser = true;
-  }
-
-  if (!assignments.length) {
-    return jsonResponse({ success: true, data: existing });
-  }
-
-  assignments.push("updated_at = CURRENT_TIMESTAMP");
-  bindings.push(id);
-
-  var statement = env.DB.prepare(
-    "UPDATE staff_users SET " + assignments.join(", ") + " WHERE id = ?"
-  );
-
-  await statement.bind.apply(statement, bindings).run();
-
-  /* 停用或改密碼：讓對方所有裝置重新登入（改自己密碼則保留目前登入） */
-  if (logoutUser && id !== staff.id) {
-    await deleteStaffSessions(env, id);
-  }
-
-  await writeAuditLog(env, staff, "update", "staff_users", id, {
-    fields: assignments.length
-  });
-
-  return jsonResponse({ success: true, data: await getStaffRecord(env, id) });
-
-}

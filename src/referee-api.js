@@ -85,7 +85,7 @@ var STATUS_ACTIONS = {
 
 export async function handleRefereeApi(request, url, env) {
 
-  var auth = await requireStaff(request, env, ["admin", "referee"]);
+  var auth = await requireStaff(request, env, "referee");
 
   if (auth.response) {
     return auth.response;

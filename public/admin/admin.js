@@ -77,6 +77,9 @@
     INVALID_MATCH_STATE: "比賽狀態已被其他人更新，畫面已重新整理。",
     DATABASE_NOT_READY: "資料庫還沒建立後台資料表，請先執行 migration。",
     BELOW_THRESHOLD: "報到人數未達抽獎門檻。",
+    ACCOUNT_DISABLED: "這個 ERP 帳號已停用。",
+    MUST_CHANGE_PASSWORD: "請先登入 ERP 修改初始密碼，再回來登入官網後台。",
+    NO_WEB_ACCESS: "你的帳號沒有官網後台的權限，請洽系統管理員到 ERP「系統設定 → 角色權限」開啟。",
     NETWORK_ERROR: "連線失敗，請檢查網路後再試。"
   };
 
@@ -284,19 +287,27 @@
   };
 
 
+  /*
+    分頁 id = ERP「系統設定 → 角色權限 → 官網後台」的頁面代碼
+    帳號一律在 ERP 管理，官網不再有「帳號」分頁
+  */
   var TABS = [
-    { id: "checkin", label: "報到", roles: ["admin", "referee"] },
-    { id: "lottery", label: "抽獎", roles: ["admin", "referee"] },
-    { id: "referee", label: "裁判計分", roles: ["admin", "referee"] },
-    { id: "league_matches", label: "賽程", roles: ["admin"] },
-    { id: "tournaments", label: "賽事", roles: ["admin"] },
-    { id: "teams", label: "戰隊", roles: ["admin"] },
-    { id: "players", label: "選手", roles: ["admin"] },
-    { id: "news", label: "公告", roles: ["admin"] },
-    { id: "news_images", label: "輪播照片", roles: ["admin"] },
-    { id: "contact_messages", label: "聯絡訊息", roles: ["admin"] },
-    { id: "staff", label: "帳號", roles: ["admin"] }
+    { id: "events", label: "場次管理", group: "賽事" },
+    { id: "checkin", label: "報到", group: "賽事" },
+    { id: "lottery", label: "抽獎", group: "賽事" },
+    { id: "referee", label: "裁判計分", group: "賽事" },
+    { id: "league_matches", label: "戰隊聯賽", group: "賽事" },
+    { id: "tournaments", label: "賽事報名（舊）", group: "賽事" },
+    { id: "players", label: "選手／上位登錄", group: "選手與戰隊" },
+    { id: "teams", label: "戰隊", group: "選手與戰隊" },
+    { id: "news", label: "公告", group: "網站" },
+    { id: "news_images", label: "輪播照片", group: "網站" },
+    { id: "contact_messages", label: "聯絡訊息", group: "網站" },
+    { id: "site_settings", label: "網站設定", group: "網站" }
   ];
+
+  /* 需要戰隊 / 賽事 / 選手下拉選單的分頁 */
+  var LOOKUP_TABS = ["league_matches", "tournaments", "teams", "players"];
 
 
   /* 報到 / 抽獎在 /admin/checkin.js，這裡提供共用工具給它 */
@@ -708,7 +719,9 @@
   });
 
 
-  byId("logoutButton").addEventListener("click", function () {
+  function logout() {
+
+    closeDrawer();
 
     api("POST", "/api/auth/logout", {})
       .catch(function () {})
@@ -716,13 +729,28 @@
         state.staff = null;
         showView("login");
       });
+  }
+
+
+  byId("menuButton").addEventListener("click", function () {
+    openDrawer();
+  });
+
+  byId("drawerBackdrop").addEventListener("click", function () {
+    closeDrawer();
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") {
+      closeDrawer();
+    }
   });
 
 
   function availableTabs() {
 
     return TABS.filter(function (tab) {
-      return state.staff && tab.roles.indexOf(state.staff.role) !== -1;
+      return state.staff && (state.staff.pages || []).indexOf(tab.id) !== -1;
     });
   }
 
@@ -732,12 +760,16 @@
     state.staff = staff;
 
     byId("userName").textContent = staff.display_name;
-    byId("userRole").textContent = enumLabel("role", staff.role);
+    byId("userRole").textContent = staff.role_name || staff.role;
 
     renderNav();
     showView("main");
 
-    var ready = staff.role === "admin" ? loadLookups() : Promise.resolve();
+    var needLookups = LOOKUP_TABS.some(function (id) {
+      return (staff.pages || []).indexOf(id) !== -1;
+    });
+
+    var ready = needLookups ? loadLookups() : Promise.resolve();
 
     ready.then(function () {
       openTab(tabFromHash());
@@ -783,19 +815,79 @@
     clear(nav);
 
     var tabs = availableTabs();
+    var menuButton = byId("menuButton");
 
     /* 只有一個分頁（裁判）就不顯示選單 */
-    nav.hidden = tabs.length <= 1;
+    if (menuButton) {
+      menuButton.hidden = tabs.length <= 1;
+    }
+
+    var head = el("div", "drawer-head");
+    head.appendChild(el("strong", null, "後台選單"));
+    head.appendChild(button("×", "icon-button", closeDrawer));
+    nav.appendChild(head);
+
+    var groups = [];
 
     tabs.forEach(function (tab) {
 
-      var link = el("a", "tab", tab.label);
+      var group = null;
 
-      link.href = "#" + tab.id;
-      link.setAttribute("data-tab", tab.id);
+      groups.forEach(function (g) {
+        if (g.name === tab.group) {
+          group = g;
+        }
+      });
 
-      nav.appendChild(link);
+      if (!group) {
+        group = { name: tab.group, tabs: [] };
+        groups.push(group);
+      }
+
+      group.tabs.push(tab);
     });
+
+    groups.forEach(function (group) {
+
+      nav.appendChild(el("div", "drawer-group", group.name));
+
+      var grid = el("div", "drawer-grid");
+
+      group.tabs.forEach(function (tab) {
+
+        var link = el("a", "tab", tab.label);
+
+        link.href = "#" + tab.id;
+        link.setAttribute("data-tab", tab.id);
+        link.addEventListener("click", closeDrawer);
+
+        grid.appendChild(link);
+      });
+
+      nav.appendChild(grid);
+    });
+
+    var foot = el("div", "drawer-foot");
+    var site = el("a", "btn btn-ghost", "開啟官網");
+
+    site.href = "/";
+    site.target = "_blank";
+    site.rel = "noopener";
+
+    foot.appendChild(site);
+    foot.appendChild(button("登出", "btn btn-ghost", logout));
+    nav.appendChild(foot);
+  }
+
+
+  function openDrawer() {
+    document.body.classList.add("drawer-open");
+    byId("adminNav").hidden = false;
+  }
+
+
+  function closeDrawer() {
+    document.body.classList.remove("drawer-open");
   }
 
 

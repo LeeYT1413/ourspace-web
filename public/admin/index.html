@@ -4,19 +4,24 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex, nofollow">
-  <meta name="theme-color" content="#05060a">
+  <meta name="theme-color" content="#0F1A2E">
+  <link rel="icon" href="/images/ourspace-logo-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@700;900&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 
   <title>窩室後台</title>
 
   <link rel="stylesheet" href="/admin/admin.css">
   <link rel="stylesheet" href="/admin/checkin.css">
+  <link rel="stylesheet" href="/admin/night.css">
 </head>
 
 <body>
 
   <!-- 載入中 -->
   <div id="viewLoading" class="boot">
-    <div class="boot-mark">O</div>
+    <img class="boot-logo" src="/images/ourspace-logo.jpg" alt="">
   </div>
 
 
@@ -26,16 +31,18 @@
     <form id="loginForm" class="auth-card" novalidate>
 
       <div class="auth-brand">
-        <div class="brand-mark">O</div>
+        <img class="brand-logo" src="/images/ourspace-logo.jpg" alt="窩室 OURSPACE">
         <div>
           <div class="brand-main">OURSPACE</div>
           <div class="brand-sub">窩室後台</div>
         </div>
       </div>
 
+      <p class="auth-note">請使用 ERP 的帳號（Email）與密碼登入。</p>
+
       <label class="field">
-        <span class="field-label">帳號</span>
-        <input name="username" type="text" autocomplete="username" required>
+        <span class="field-label">ERP 帳號（Email）</span>
+        <input name="username" type="email" autocomplete="username" inputmode="email" required>
       </label>
 
       <label class="field">
@@ -58,7 +65,7 @@
     <form id="setupForm" class="auth-card" novalidate>
 
       <div class="auth-brand">
-        <div class="brand-mark">O</div>
+        <img class="brand-logo" src="/images/ourspace-logo.jpg" alt="窩室 OURSPACE">
         <div>
           <div class="brand-main">OURSPACE</div>
           <div class="brand-sub">建立第一個管理員</div>
@@ -111,20 +118,24 @@
     <header class="topbar">
 
       <div class="topbar-brand">
-        <div class="brand-mark brand-mark-small">O</div>
+        <img class="brand-logo brand-logo-small" src="/images/ourspace-logo.jpg" alt="窩室 OURSPACE">
         <span>窩室後台</span>
       </div>
 
       <div class="topbar-user">
         <span id="userName" class="user-name"></span>
         <span id="userRole" class="user-role"></span>
-        <a class="btn btn-ghost btn-small" href="/" target="_blank" rel="noopener">官網</a>
-        <button id="logoutButton" class="btn btn-ghost btn-small" type="button">登出</button>
+        <button id="menuButton" class="menu-button" type="button" aria-label="開啟後台選單" aria-controls="adminNav">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>
+        </button>
       </div>
 
     </header>
 
-    <nav id="adminNav" class="tabs" aria-label="後台選單"></nav>
+    <div id="drawerBackdrop" class="drawer-backdrop"></div>
+
+    <nav id="adminNav" class="drawer" aria-label="後台選單">
+    </nav>
 
     <main id="adminMain" class="main"></main>
 
