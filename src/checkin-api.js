@@ -7,6 +7,8 @@
      GET  /api/checkin/events/:id          場次與報名名單
      GET  /api/checkin/site                網站設定（營業時間、地址、社群、關於我們）
      GET  /api/checkin/images/:id          後台上傳的圖片
+     GET  /api/checkin/highlights          最近封存場次的上位者（首頁「恭喜上位」）
+     POST /api/checkin/register            線上報名（非會員也可以；一次多場、多人）
 
    後台（/api/referee/checkin/*，依 ERP「官網後台」頁面權限）
      events          場次管理：場次、比賽結束、賽後紀錄、封存
@@ -127,6 +129,29 @@ function imageUrl(id) {
 }
 
 
+/* 海報：後台上傳的圖片優先，其次是舊賽事搬過來的網址 */
+function posterOf(row) {
+  return imageUrl(row.poster_image_id) || row.poster_link || null;
+}
+
+
+var SIGNUP_WINDOW_MINUTES = 10;
+var SIGNUP_MAX_PER_WINDOW = 6;
+var SIGNUP_MAX_NAMES = 10;
+var SIGNUP_MAX_EVENTS = 10;
+
+
+async function sha256Hex(text) {
+
+  var bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(text)));
+
+  return Array.from(new Uint8Array(bytes))
+    .map(function (b) { return b.toString(16).padStart(2, "0"); })
+    .join("");
+
+}
+
+
 /* 冠軍 / 亞軍 / 季軍 / 第 N 名 → 名次數字；其他（例如最佳新人）回 null */
 function rankNumber(label) {
 
@@ -229,8 +254,16 @@ function cleanList(list, mapper) {
 
 async function handlePublic(request, parts, env) {
 
+  if (request.method === "POST" && parts[2] === "register" && parts.length === 3) {
+    return publicRegister(request, env);
+  }
+
   if (request.method !== "GET") {
     return null;
+  }
+
+  if (parts[2] === "highlights" && parts.length === 3) {
+    return publicHighlights(env);
   }
 
   if (parts[2] === "images" && parts.length === 4 && isPositiveInteger(parts[3])) {
@@ -251,7 +284,7 @@ async function handlePublic(request, parts, env) {
 
     var list = await env.DB.prepare(
       "SELECT e.id, e.event_date, e.title, e.start_time, e.note, e.event_type, e.fee, e.capacity, " +
-      "e.reg_deadline, e.poster_image_id, e.archived_at, " +
+      "e.reg_deadline, e.poster_image_id, e.poster_link, e.archived_at, " +
       "COUNT(c.id) AS total, " +
       "COALESCE(SUM(CASE WHEN c.checked_in = 1 THEN 1 ELSE 0 END), 0) AS checked " +
       "FROM checkin_events e " +
@@ -265,7 +298,8 @@ async function handlePublic(request, parts, env) {
     .all();
 
     var rows = (list.results || []).map(function (row) {
-      row.poster_url = imageUrl(row.poster_image_id);
+      row.poster_url = posterOf(row);
+      delete row.poster_link;
       return row;
     });
 
@@ -278,7 +312,7 @@ async function handlePublic(request, parts, env) {
 
   var event = await env.DB.prepare(
     "SELECT id, event_date, title, start_time, note, event_type, fee, capacity, reg_deadline, " +
-    "poster_image_id, bonus_text, rules_text, special_text, notes_text, archived_at " +
+    "poster_image_id, poster_link, bonus_text, rules_text, special_text, notes_text, archived_at " +
     "FROM checkin_events WHERE id = ? AND is_public = 1 AND event_date >= ?"
   )
   .bind(Number(parts[3]), today)
@@ -290,15 +324,19 @@ async function handlePublic(request, parts, env) {
 
   var results = await env.DB.batch([
     env.DB.prepare(
-      "SELECT nickname, checked_in, checkin_number, is_judge FROM checkin_entries WHERE event_id = ? " +
-      "ORDER BY checked_in DESC, checkin_number ASC, id ASC"
+      "SELECT c.nickname, c.checked_in, c.checkin_number, c.is_judge, t.team_name " +
+      "FROM checkin_entries c " +
+      "LEFT JOIN players p ON p.id = c.player_id " +
+      "LEFT JOIN teams t ON t.id = p.team_id " +
+      "WHERE c.event_id = ? ORDER BY c.id ASC"
     ).bind(event.id),
     env.DB.prepare(
       "SELECT rank_label, prize FROM checkin_event_prizes WHERE event_id = ? ORDER BY sort ASC, id ASC"
     ).bind(event.id)
   ]);
 
-  event.poster_url = imageUrl(event.poster_image_id);
+  event.poster_url = posterOf(event);
+  delete event.poster_link;
   event.entries = results[0].results || [];
   event.prizes = results[1].results || [];
 
@@ -571,7 +609,7 @@ async function getEventDetail(env, id) {
 
   event.prizes = results[0].results || [];
   event.tiers = results[1].results || [];
-  event.poster_url = imageUrl(event.poster_image_id);
+  event.poster_url = posterOf(event);
   event.group = eventGroup(event, taiwanToday());
 
   return jsonResponse({ success: true, data: event });
@@ -709,10 +747,13 @@ async function saveEvent(request, env, staff, id) {
       "UPDATE checkin_events SET " +
       "event_type = ?, event_date = ?, title = ?, start_time = ?, is_public = ?, note = ?, fee = ?, " +
       "capacity = ?, reg_deadline = ?, poster_image_id = ?, bonus_text = ?, rules_text = ?, " +
-      "special_text = ?, notes_text = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      "special_text = ?, notes_text = ?, " +
+      "poster_link = CASE WHEN ? = 1 THEN NULL ELSE poster_link END, " +
+      "updated_at = CURRENT_TIMESTAMP WHERE id = ?"
     )
     .bind(values[0], values[1], values[2], values[3], values[4], values[5], values[6],
-      values[7], values[8], values[9], values[10], values[11], values[12], values[13], id)
+      values[7], values[8], values[9], values[10], values[11], values[12], values[13],
+      body.poster_removed === true ? 1 : 0, id)
     .run();
   }
 
@@ -1087,7 +1128,7 @@ async function unarchive(env, staff, id) {
 
 var ENTRY_SELECT =
   "SELECT c.id, c.event_id, c.nickname, c.player_id, c.checked_in, c.checkin_number, " +
-  "c.is_judge, c.checked_in_at, " +
+  "c.is_judge, c.checked_in_at, c.contact_phone, c.source, " +
   "CASE WHEN w.id IS NULL THEN 0 ELSE 1 END AS has_won " +
   "FROM checkin_entries c " +
   "LEFT JOIN (SELECT MIN(id) AS id, entry_id FROM checkin_lottery_wins GROUP BY entry_id) w ON w.entry_id = c.id ";
@@ -1682,5 +1723,188 @@ async function uploadImage(request, env, staff) {
   var id = result.meta.last_row_id;
 
   return jsonResponse({ success: true, data: { id: id, url: imageUrl(id) } }, 201);
+
+}
+
+
+/* =========================================================
+   官網：恭喜上位 / 線上報名
+========================================================= */
+
+async function publicHighlights(env) {
+
+  var result = await env.DB.prepare(
+    "SELECT r.rank_label, c.nickname, e.title, e.event_date, t.team_name " +
+    "FROM checkin_results r " +
+    "INNER JOIN checkin_events e ON e.id = r.event_id " +
+    "INNER JOIN checkin_entries c ON c.id = r.entry_id " +
+    "LEFT JOIN players p ON p.id = c.player_id " +
+    "LEFT JOIN teams t ON t.id = p.team_id " +
+    "WHERE e.archived_at IS NOT NULL AND e.is_public = 1 " +
+    "ORDER BY e.event_date DESC, e.id DESC, r.sort ASC, r.id ASC " +
+    "LIMIT 6"
+  ).all();
+
+  return jsonResponse({ success: true, data: result.results || [] }, 200, API_CACHE_SECONDS);
+
+}
+
+
+async function publicRegister(request, env) {
+
+  var body = await parseJsonBody(request);
+
+  if (!body) {
+    return errorResponse("INVALID_JSON", 400);
+  }
+
+  /* ---------- 名單 ---------- */
+
+  var names = [];
+  var seen = {};
+  var rawNames = Array.isArray(body.names) ? body.names : [];
+
+  for (var i = 0; i < rawNames.length; i++) {
+
+    var name = cleanText(rawNames[i]);
+
+    if (!name) {
+      continue;
+    }
+
+    if (!validName(name)) {
+      return errorResponse("INVALID_NAME", 400, { field: "names", value: name.slice(0, 30) });
+    }
+
+    var key = name.toLowerCase();
+
+    if (!seen[key]) {
+      seen[key] = true;
+      names.push(name);
+    }
+  }
+
+  if (!names.length) {
+    return errorResponse("REQUIRED", 400, { field: "names" });
+  }
+
+  if (names.length > SIGNUP_MAX_NAMES) {
+    return errorResponse("TOO_MANY_NAMES", 400);
+  }
+
+  var phone = cleanText(body.phone);
+
+  if (phone && !/^[0-9+\-\s()]{6,20}$/.test(phone)) {
+    return errorResponse("INVALID_PHONE", 400, { field: "phone" });
+  }
+
+  var eventIds = [];
+
+  (Array.isArray(body.event_ids) ? body.event_ids : []).forEach(function (id) {
+    if (isPositiveInteger(id) && eventIds.indexOf(Number(id)) === -1) {
+      eventIds.push(Number(id));
+    }
+  });
+
+  if (!eventIds.length) {
+    return errorResponse("REQUIRED", 400, { field: "event_ids" });
+  }
+
+  if (eventIds.length > SIGNUP_MAX_EVENTS) {
+    return errorResponse("TOO_MANY_EVENTS", 400);
+  }
+
+  /* ---------- 同一個網路連線短時間內的次數限制 ---------- */
+
+  var ip = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For") || "unknown";
+  var ipHash = await sha256Hex("ourspace-signup:" + ip);
+
+  var recent = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM signup_attempts WHERE ip_hash = ? AND created_at > datetime('now', ?)"
+  )
+  .bind(ipHash, "-" + SIGNUP_WINDOW_MINUTES + " minutes")
+  .first();
+
+  if (recent && Number(recent.n) >= SIGNUP_MAX_PER_WINDOW) {
+    return errorResponse("RATE_LIMITED", 429);
+  }
+
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO signup_attempts (ip_hash) VALUES (?)").bind(ipHash),
+    env.DB.prepare("DELETE FROM signup_attempts WHERE created_at < datetime('now', '-1 day')")
+  ]);
+
+  /* ---------- 檢查每一場 ---------- */
+
+  var today = taiwanToday();
+  var now = taiwanNow();
+  var events = [];
+
+  for (var j = 0; j < eventIds.length; j++) {
+
+    var event = await env.DB.prepare(
+      "SELECT e.id, e.title, e.event_type, e.event_date, e.is_public, e.archived_at, e.capacity, e.reg_deadline, " +
+      "(SELECT COUNT(*) FROM checkin_entries c WHERE c.event_id = e.id) AS total " +
+      "FROM checkin_events e WHERE e.id = ?"
+    )
+    .bind(eventIds[j])
+    .first();
+
+    if (!event || Number(event.is_public) !== 1 || event.event_type !== "big" || event.archived_at || event.event_date < today) {
+      return errorResponse("SIGNUP_CLOSED", 409, { event_id: eventIds[j], title: event ? event.title : null });
+    }
+
+    if (event.reg_deadline && event.reg_deadline.replace("T", " ") < now) {
+      return errorResponse("SIGNUP_CLOSED", 409, { event_id: event.id, title: event.title });
+    }
+
+    if (event.capacity && Number(event.total) + names.length > Number(event.capacity)) {
+      return errorResponse("EVENT_FULL", 409, {
+        event_id: event.id,
+        title: event.title,
+        left: Math.max(0, Number(event.capacity) - Number(event.total))
+      });
+    }
+
+    events.push(event);
+  }
+
+  /* ---------- 寫入（同一場已經有相同名稱就略過） ---------- */
+
+  var statement = env.DB.prepare(
+    "INSERT OR IGNORE INTO checkin_entries (event_id, nickname, contact_phone, source, registered_at) " +
+    "VALUES (?, ?, ?, 'online', ?)"
+  );
+
+  var statements = [];
+
+  events.forEach(function (event) {
+    names.forEach(function (name) {
+      statements.push(statement.bind(event.id, name, phone || null, now));
+    });
+  });
+
+  var results = await env.DB.batch(statements);
+  var summary = [];
+  var k = 0;
+
+  events.forEach(function (event) {
+
+    var added = 0;
+
+    names.forEach(function () {
+      added += results[k].meta.changes || 0;
+      k++;
+    });
+
+    summary.push({
+      event_id: event.id,
+      title: event.title,
+      added: added,
+      duplicates: names.length - added
+    });
+  });
+
+  return jsonResponse({ success: true, data: summary }, 201);
 
 }

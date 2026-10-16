@@ -1328,3 +1328,12 @@
     animation: none;
   }
 }
+
+.ck-tag-blue {
+  background: #3D6FB6;
+}
+
+.ck-source {
+  color: #5A4632;
+  font-size: 13px;
+}

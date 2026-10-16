@@ -853,6 +853,7 @@
         preview.appendChild(button("移除", "btn btn-ghost btn-small", function () {
           form.poster_image_id = null;
           form.poster_url = null;
+          form.poster_removed = true;
           drawPoster();
         }));
 
@@ -1069,6 +1070,7 @@
         capacity: capInput.value,
         reg_deadline: deadlineInput.value,
         poster_image_id: form.poster_image_id,
+        poster_removed: !!form.poster_removed,
         prizes: form.prizes,
         tiers: form.tiers
       };
@@ -1708,6 +1710,10 @@
       headBtn.appendChild(el("span", "ck-chevron", "›"));
       headBtn.appendChild(el("span", "ck-name", (entry.checkin_number ? entry.checkin_number + "- " : "") + entry.nickname));
 
+      if (entry.source === "online") {
+        headBtn.appendChild(el("span", "ck-tag ck-tag-blue", "線上"));
+      }
+
       if (entry.player_id) {
         headBtn.appendChild(el("span", "ck-tag ck-tag-gold", "選手"));
       }
@@ -1733,6 +1739,12 @@
 
       var body = el("div", "ck-result-body");
       var willCheck = pick.check;
+
+      if (entry.source === "online" || entry.contact_phone) {
+        body.appendChild(el("span", "ck-source",
+          (entry.source === "online" ? "官網線上報名" : "現場新增") +
+          (entry.contact_phone ? "・電話 " + entry.contact_phone : "")));
+      }
 
       var checkBtn = button("", "ck-check" + (willCheck ? " on" : ""), function () {
         pick.check = !pick.check;

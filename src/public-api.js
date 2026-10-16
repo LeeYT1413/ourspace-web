@@ -13,6 +13,21 @@ import {
   isPositiveInteger
 } from "./util.js";
 
+import { getSessionStaff } from "./auth.js";
+
+
+/* 戰隊聯賽目前不公開，只有登入後台的系統管理員看得到 */
+async function isSysadmin(request, env) {
+
+  try {
+    var staff = await getSessionStaff(request, env);
+    return !!staff && staff.role === "sysadmin";
+  } catch (error) {
+    return false;
+  }
+
+}
+
 
 /* 對外公開的賽事狀態（draft 草稿永遠不會出現在官網） */
 var PUBLIC_TOURNAMENT_STATUSES = [
@@ -45,6 +60,14 @@ export async function handlePublicApi(request, url, env) {
 
     if (pathname.indexOf("/api/tournaments/") === 0) {
       return getTournament(pathname.replace("/api/tournaments/", ""), env);
+    }
+
+    if (pathname === "/api/teams") {
+      return getTeams(env);
+    }
+
+    if (pathname.indexOf("/api/league") === 0 && !(await isSysadmin(request, env))) {
+      return errorResponse("NOT_FOUND", 404);
     }
 
     if (pathname === "/api/league") {
@@ -108,6 +131,18 @@ function listResponse(result, cacheSeconds) {
 /* =========================================================
    NEWS
 ========================================================= */
+
+async function getTeams(env) {
+
+  var result = await env.DB.prepare(
+    "SELECT id, team_name, team_logo_url, description FROM teams " +
+    "WHERE status = 'active' ORDER BY team_name ASC LIMIT 100"
+  ).all();
+
+  return listResponse(result);
+
+}
+
 
 async function getNews(env) {
 
