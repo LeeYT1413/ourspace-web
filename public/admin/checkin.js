@@ -285,7 +285,18 @@
 
 
   function stop() {
+
     closeModal();
+
+    if (lot.wrap) {
+      lot.wrap.classList.remove("is-full");
+    }
+
+    document.body.classList.remove("lot-full");
+
+    if (document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(function () {});
+    }
   }
 
 
@@ -788,7 +799,7 @@
 
     var titleInput = input("text", isEdit ? event.title : "", { maxlength: "50", placeholder: "例如：窩室日常賽" });
     var dateInput = input("date", isEdit ? event.event_date : ck.today);
-    var timeInput = input("time", isEdit ? event.start_time : "");
+    var timeInput = A.timeSelect(isEdit ? event.start_time || "" : "", "未定");
     var noteInput = input("text", isEdit ? event.note : "", { maxlength: "200", placeholder: "選填，會顯示在官網" });
     var publicOn = isEdit ? Number(event.is_public) === 1 : true;
 
@@ -813,7 +824,7 @@
     basic.appendChild(sectionTitle("基本資料"));
     basic.appendChild(field("場次名稱", titleInput));
     dateRow.appendChild(field("日期", dateInput));
-    dateRow.appendChild(field("開始時間", timeInput));
+    dateRow.appendChild(field("開始時間（24 小時制）", timeInput));
     basic.appendChild(dateRow);
     basic.appendChild(field("備註", noteInput));
     basic.appendChild(publicSwitch);
@@ -824,7 +835,8 @@
 
     var feeInput = input("number", isEdit ? event.fee : "", { min: "0", inputmode: "numeric" });
     var capInput = input("number", isEdit ? event.capacity : "", { min: "1", inputmode: "numeric" });
-    var deadlineInput = input("datetime-local", isEdit ? event.reg_deadline : "");
+    var deadlineInput = input("hidden", "");
+    var deadlinePicker = A.dateTimePicker(deadlineInput, isEdit ? event.reg_deadline : "");
 
     var feeRow = el("div", "ck-row");
 
@@ -832,7 +844,8 @@
     feeRow.appendChild(field("報名費（元）", feeInput));
     feeRow.appendChild(field("名額上限", capInput));
     bigBlock.appendChild(feeRow);
-    bigBlock.appendChild(field("報名截止", deadlineInput));
+    bigBlock.appendChild(field("報名截止（24 小時制）", deadlinePicker));
+    bigBlock.appendChild(deadlineInput);
 
     var posterBox = el("div", "ck-poster");
 
@@ -898,7 +911,7 @@
         }
 
         list.forEach(function (text) {
-          menu.appendChild(button("＋ " + text, "ck-preset-item", function () {
+          menu.appendChild(button(text, "ck-preset-item", function () {
             area.value = area.value ? area.value + "\n" + text : text;
             menu.hidden = true;
             area.focus();
@@ -2073,7 +2086,9 @@
   var lot = {
     data: null,
     tierId: null,
-    info: null,
+    wrap: null,
+    title: null,
+    stats: null,
     tierBox: null,
     stage: null,
     machine: null,
@@ -2081,7 +2096,10 @@
     result: null,
     winners: null,
     drawBtn: null,
-    prizeInput: null
+    fullBtn: null,
+    prizeInput: null,
+    excluded: [],
+    lastFlags: {}
   };
 
 
@@ -2099,11 +2117,23 @@
 
     main.appendChild(eventSelect(function () {
       lot.tierId = null;
+      lot.excluded = [];
       renderLottery();
     }));
 
-    lot.info = el("div", "ck-stats");
-    lot.tierBox = el("div", "ck-tiers");
+    /* 全螢幕時整塊（獎項、扭蛋機、抽獎按鈕、中獎紀錄）一起放大 */
+    lot.wrap = el("div", "ck-lot");
+
+    var top = el("div", "ck-lot-top");
+    lot.title = el("strong", "ck-lot-title", currentEvent().title);
+
+    lot.fullBtn = button("⛶ 全螢幕", "btn btn-ghost btn-small", toggleFullscreen);
+
+    top.appendChild(lot.title);
+    top.appendChild(lot.fullBtn);
+
+    lot.stats = el("div", "ck-stats ck-lot-stats");
+    lot.tierBox = el("div", "ck-tiers ck-lot-tiers");
     lot.stage = el("div", "ck-lot-stage");
 
     var machine = el("div", "gacha");
@@ -2159,9 +2189,6 @@
 
     lot.result = el("div", "gacha-result");
     lot.result.hidden = true;
-    lot.result.addEventListener("click", function () {
-      lot.result.hidden = true;
-    });
     lot.stage.appendChild(lot.result);
 
     var controls = el("div", "ck-lot-controls");
@@ -2171,27 +2198,57 @@
 
     lot.drawBtn = button("🎲 轉動扭蛋", "btn btn-primary ck-big-btn ck-draw", startDraw);
 
-    var fullBtn = button("全螢幕", "btn btn-ghost", function () {
-      if (document.fullscreenElement) {
-        document.exitFullscreen();
-      } else if (lot.stage.requestFullscreen) {
-        lot.stage.requestFullscreen().catch(function () {});
-      }
-    });
-
     controls.appendChild(lot.prizeInput);
     controls.appendChild(lot.drawBtn);
-    controls.appendChild(fullBtn);
 
     lot.winners = el("div", "ck-winners");
 
-    main.appendChild(lot.info);
-    main.appendChild(lot.tierBox);
-    main.appendChild(lot.stage);
-    main.appendChild(controls);
-    main.appendChild(lot.winners);
+    lot.wrap.appendChild(top);
+    lot.wrap.appendChild(lot.stats);
+    lot.wrap.appendChild(lot.tierBox);
+    lot.wrap.appendChild(lot.stage);
+    lot.wrap.appendChild(controls);
+    lot.wrap.appendChild(lot.winners);
+
+    main.appendChild(lot.wrap);
+
+    document.removeEventListener("fullscreenchange", onFullscreen);
+    document.addEventListener("fullscreenchange", onFullscreen);
 
     loadLottery();
+  }
+
+
+  function toggleFullscreen() {
+
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+      return;
+    }
+
+    if (lot.wrap.requestFullscreen) {
+      lot.wrap.requestFullscreen().catch(function () {
+        /* 不支援全螢幕的瀏覽器（例如 iPhone）：改用撐滿畫面的方式 */
+        lot.wrap.classList.toggle("is-full");
+        onFullscreen();
+      });
+    } else {
+      lot.wrap.classList.toggle("is-full");
+      onFullscreen();
+    }
+  }
+
+
+  function onFullscreen() {
+
+    if (!lot.wrap) {
+      return;
+    }
+
+    var full = document.fullscreenElement === lot.wrap || lot.wrap.classList.contains("is-full");
+
+    lot.fullBtn.textContent = full ? "✕ 離開全螢幕" : "⛶ 全螢幕";
+    document.body.classList.toggle("lot-full", full);
   }
 
 
@@ -2230,10 +2287,10 @@
       return;
     }
 
-    clear(lot.info);
-    lot.info.appendChild(stat("已報到", data.checked_count + " 人", true));
-    lot.info.appendChild(stat("可抽人數", data.eligible_count + " 人"));
-    lot.info.appendChild(stat("已抽出", data.wins.length + " 人"));
+    clear(lot.stats);
+    lot.stats.appendChild(stat("已報到", data.checked_count + " 人", true));
+    lot.stats.appendChild(stat("可抽人數", data.eligible_count + " 人"));
+    lot.stats.appendChild(stat("已抽出", data.wins.length + " 人"));
 
     /* 預設選第一個還沒抽滿的門檻 */
     if (!currentTier() && data.tiers.length) {
@@ -2259,7 +2316,11 @@
         var below = tier.min_players > 0 && data.checked_count < tier.min_players;
         var full = tier.drawn >= tier.qty;
         var node = button("", "ck-tier" + (tier.id === lot.tierId ? " active" : "") + (below ? " below" : "") + (full ? " full" : ""), function () {
+          if (ck.drawing) {
+            return;
+          }
           lot.tierId = tier.id;
+          lot.excluded = [];
           drawLotteryInfo();
         });
 
@@ -2277,7 +2338,7 @@
 
     var locked = data.archived;
 
-    lot.drawBtn.disabled = locked;
+    lot.drawBtn.disabled = locked || ck.drawing;
 
     clear(lot.winners);
 
@@ -2368,6 +2429,7 @@
       return;
     }
 
+    lot.excluded = [];
     runDraw(flags);
   }
 
@@ -2377,6 +2439,7 @@
     ck.drawing = true;
     lot.drawBtn.disabled = true;
     lot.result.hidden = true;
+    lot.lastFlags = flags;
 
     var color = CAPSULE_COLORS[Math.floor(Math.random() * CAPSULE_COLORS.length)];
     var tier = currentTier();
@@ -2390,8 +2453,14 @@
       tier_id: tier ? tier.id : null,
       prize: tier ? null : lot.prizeInput.value,
       confirm_below_threshold: !!flags.confirm_below_threshold,
-      confirm_over_quota: !!flags.confirm_over_quota
+      confirm_over_quota: true,
+      exclude_entry_ids: lot.excluded
     };
+
+    /* 第一次抽才檢查名額；重抽是取代剛剛那位 */
+    if (!lot.excluded.length) {
+      body.confirm_over_quota = !!flags.confirm_over_quota;
+    }
 
     function finish() {
       ck.drawing = false;
@@ -2411,9 +2480,9 @@
           lot.machine.classList.add("is-open");
 
           return wait(350).then(function () {
-            showWinner(response.winner, color);
             lot.data = response.data;
             drawLotteryInfo();
+            showWinner(response.winner, color);
             finish();
           });
         });
@@ -2433,6 +2502,7 @@
   }
 
 
+  /* 抽出後：確認，或重抽（剛剛那位這一輪不會再被抽到） */
   function showWinner(winner, color) {
 
     clear(lot.result);
@@ -2456,7 +2526,36 @@
       card.appendChild(el("div", "gacha-result-prize", winner.prize));
     }
 
-    card.appendChild(el("div", "gacha-result-hint", "點一下關閉"));
+    var actions = el("div", "gacha-result-actions");
+
+    var redo = button("↻ 重抽", "btn btn-ghost gacha-redo", function () {
+
+      redo.disabled = true;
+      ok.disabled = true;
+
+      api("DELETE", "/lottery/" + winner.id)
+        .then(function () {
+          lot.excluded.push(winner.entry_id);
+          runDraw(lot.lastFlags || {});
+        })
+        .catch(function (error) {
+          redo.disabled = false;
+          ok.disabled = false;
+          toast(errorText(error), "error");
+        });
+    });
+
+    var ok = button("✓ 確認", "btn btn-primary", function () {
+      lot.result.hidden = true;
+      lot.excluded = [];
+      toast("已確認：" + winner.nickname + (winner.prize ? "・" + winner.prize : ""), "success");
+    });
+
+    actions.appendChild(redo);
+    actions.appendChild(ok);
+    card.appendChild(actions);
+
+    card.appendChild(el("div", "gacha-result-hint", "人不在現場可以按「重抽」，剛剛那位這一輪不會再被抽到。"));
 
     lot.result.appendChild(card);
     lot.result.hidden = false;
@@ -2614,7 +2713,7 @@
     var presetBlock = el("div", "ck-block");
     var presetTabs = el("div");
     var presetList = el("div", "ck-list");
-    var draft = input("text", "", { maxlength: "200", placeholder: "新增一則常用內容", "aria-label": "新增常用內容" });
+    var draft = textarea("", { rows: "3", maxlength: "1000", placeholder: "新增一則常用內容（可以換行）", "aria-label": "新增常用內容" });
 
     function drawPresets() {
 
@@ -2639,7 +2738,7 @@
 
         var row = el("div", "ck-inline ck-subcard");
 
-        row.appendChild(el("span", "ck-name", text));
+        row.appendChild(el("span", "ck-name ck-pre", text));
         row.appendChild(removeButton("刪除這則常用內容", function () {
           list.splice(index, 1);
           drawPresets();
@@ -2662,17 +2761,10 @@
       drawPresets();
     }
 
-    draft.addEventListener("keydown", function (event) {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        addPreset();
-      }
-    });
-
-    var addRow = el("div", "ck-inline");
+    var addRow = el("div", "ck-preset-add");
 
     addRow.appendChild(draft);
-    addRow.appendChild(button("加入", "btn btn-gold", addPreset));
+    addRow.appendChild(button("＋ 加入這則常用內容", "btn btn-gold btn-block", addPreset));
 
     drawPresets();
 

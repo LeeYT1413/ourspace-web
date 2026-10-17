@@ -320,6 +320,8 @@
     el: function (tag, className, text) { return el(tag, className, text); },
     button: function (text, className, onClick) { return button(text, className, onClick); },
     clear: function (node) { clear(node); },
+    timeSelect: function (value, emptyLabel) { return timeSelect(value, emptyLabel); },
+    dateTimePicker: function (hidden, value) { return dateTimePicker(hidden, value); },
     staff: function () { return state.staff; }
   };
 
@@ -522,6 +524,86 @@
     date = new Date(date.getTime() + 8 * 3600 * 1000);
 
     return date.toISOString().slice(0, 16).replace("T", " ");
+  }
+
+
+  /* =======================================================
+     時間：24 小時制、每 10 分鐘一格
+  ======================================================= */
+
+  function timeSelect(value, emptyLabel) {
+
+    var select = el("select", "time-select");
+    var found = !value;
+
+    function add(t) {
+      var option = el("option", null, t);
+      option.value = t;
+      select.appendChild(option);
+    }
+
+    if (emptyLabel !== null) {
+      var empty = el("option", null, emptyLabel || "未定");
+      empty.value = "";
+      select.appendChild(empty);
+    }
+
+    for (var h = 0; h < 24; h++) {
+      for (var m = 0; m < 60; m += 10) {
+
+        var t = (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m;
+
+        /* 舊資料不是整 10 分的，保留原本的時間 */
+        if (!found && value < t) {
+          add(value);
+          found = true;
+        }
+
+        if (t === value) {
+          found = true;
+        }
+
+        add(t);
+      }
+    }
+
+    if (!found) {
+      add(value);
+    }
+
+    select.value = value || "";
+
+    return select;
+  }
+
+
+  /* 日期 + 時間；值寫進 hidden（格式 YYYY-MM-DDTHH:MM） */
+  function dateTimePicker(hidden, value) {
+
+    value = value ? String(value).slice(0, 16).replace(" ", "T") : "";
+
+    var box = el("div", "dt-pick");
+    var date = el("input");
+    var time = timeSelect(value.slice(11, 16), "時間");
+
+    date.type = "date";
+    date.value = value.slice(0, 10);
+    date.setAttribute("aria-label", "日期");
+    time.setAttribute("aria-label", "時間（24 小時制）");
+
+    function sync() {
+      hidden.value = date.value ? date.value + "T" + (time.value || "00:00") : "";
+    }
+
+    date.addEventListener("change", sync);
+    time.addEventListener("change", sync);
+
+    box.appendChild(date);
+    box.appendChild(time);
+
+    hidden.value = value;
+
+    return box;
   }
 
 
@@ -1342,7 +1424,7 @@
         input.inputMode = "numeric";
         input.step = "1";
       } else if (field.type === "datetime") {
-        input.type = "datetime-local";
+        input.type = "hidden";
       } else if (field.type === "url") {
         input.type = "text";
         input.inputMode = "url";
@@ -1355,7 +1437,7 @@
       }
 
       if (field.type === "datetime") {
-        input.value = toInputDatetime(value);
+        wrapper.appendChild(dateTimePicker(input, value));
       } else if (field.type !== "password") {
         input.value = value === null || value === undefined ? "" : String(value);
       }

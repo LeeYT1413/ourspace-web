@@ -1009,15 +1009,6 @@
   overflow: hidden;
 }
 
-.ck-lot-stage:fullscreen {
-  min-height: 100vh;
-  background: var(--bg);
-  border-radius: 0;
-}
-
-.ck-lot-stage:fullscreen .gacha {
-  transform: scale(1.5);
-}
 
 .ck-lot-controls {
   display: flex;
@@ -1314,9 +1305,6 @@
   font-size: 12px;
 }
 
-.ck-lot-stage:fullscreen .gacha-result-name {
-  font-size: 72px;
-}
 
 @keyframes gachaPop {
   from { opacity: 0; transform: scale(0.4); }
@@ -1336,4 +1324,175 @@
 .ck-source {
   color: #5A4632;
   font-size: 13px;
+}
+
+
+/* =========================================================
+   時間選擇（24 小時制、每 10 分鐘）
+========================================================= */
+
+.time-select,
+.dt-pick select,
+.dt-pick input {
+  min-height: 48px;
+  padding: 0 12px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line-bright);
+  border-radius: 12px;
+  font: inherit;
+  font-size: 16px;
+}
+
+.ck-form .time-select {
+  width: 100%;
+}
+
+.dt-pick {
+  display: flex;
+  gap: 8px;
+}
+
+.dt-pick input {
+  flex: 1;
+  min-width: 0;
+}
+
+.dt-pick select {
+  flex: 0 0 110px;
+}
+
+
+/* ---------- 常用內容（多行） ---------- */
+
+.ck-pre {
+  white-space: pre-wrap;
+  font-weight: 500;
+}
+
+.ck-preset-item {
+  padding: 10px;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.ck-preset-add {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+
+/* =========================================================
+   抽獎：一般 / 全螢幕
+========================================================= */
+
+.ck-lot {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "top"
+    "stats"
+    "tiers"
+    "stage"
+    "controls"
+    "winners";
+  gap: 12px;
+}
+
+.ck-lot-top { grid-area: top; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ck-lot-stats { grid-area: stats; margin: 0; }
+.ck-lot-tiers { grid-area: tiers; margin: 0; }
+.ck-lot .ck-lot-stage { grid-area: stage; margin: 0; }
+.ck-lot .ck-lot-controls { grid-area: controls; }
+.ck-lot .ck-winners { grid-area: winners; margin: 0; }
+
+.ck-lot-title {
+  font-family: var(--serif);
+  font-size: 18px;
+}
+
+.ck-lot:fullscreen,
+.ck-lot.is-full {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+
+  overflow-y: auto;
+
+  padding: 20px 24px calc(20px + env(safe-area-inset-bottom, 0px));
+
+  background: var(--bg);
+}
+
+.lot-full {
+  overflow: hidden;
+}
+
+.ck-lot:fullscreen .ck-lot-title,
+.ck-lot.is-full .ck-lot-title {
+  font-size: 24px;
+}
+
+.ck-lot:fullscreen .ck-lot-stage,
+.ck-lot.is-full .ck-lot-stage {
+  min-height: 60vh;
+}
+
+/* 寬螢幕全螢幕（投影、電腦）：左邊扭蛋機，右邊獎項、抽獎、中獎紀錄 */
+@media (min-width: 900px) {
+
+  .ck-lot:fullscreen,
+  .ck-lot.is-full {
+    grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr);
+    grid-template-rows: auto auto auto auto 1fr;
+    grid-template-areas:
+      "top top"
+      "stage stats"
+      "stage tiers"
+      "stage controls"
+      "stage winners";
+    align-content: start;
+  }
+
+  .ck-lot:fullscreen .ck-lot-stage,
+  .ck-lot.is-full .ck-lot-stage {
+    min-height: calc(100vh - 120px);
+  }
+
+  .ck-lot:fullscreen .gacha,
+  .ck-lot.is-full .gacha {
+    transform: scale(1.5);
+  }
+
+  .ck-lot:fullscreen .gacha-result-name,
+  .ck-lot.is-full .gacha-result-name {
+    font-size: 64px;
+  }
+
+  .ck-lot:fullscreen .ck-winners,
+  .ck-lot.is-full .ck-winners {
+    overflow-y: auto;
+  }
+}
+
+.gacha-result {
+  cursor: default;
+}
+
+.gacha-result-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.gacha-result-actions .btn {
+  flex: 1;
+  min-height: 52px;
+  font-size: 17px;
+}
+
+.gacha-result-card .gacha-redo {
+  color: var(--ink);
+  border: 2px solid var(--ink);
 }

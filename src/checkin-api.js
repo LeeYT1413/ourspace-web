@@ -1563,14 +1563,20 @@ async function drawLottery(request, env, staff, eventId) {
     return errorResponse("NO_ELIGIBLE", 409, { data: before });
   }
 
+  /* 重抽：剛剛被抽到、但不在現場的人，這一輪先排除 */
+  var excluded = Array.isArray(body.exclude_entry_ids)
+    ? body.exclude_entry_ids.filter(isPositiveInteger).map(Number).slice(0, 200)
+    : [];
+
   var result = await env.DB.prepare(
     "INSERT INTO checkin_lottery_wins (event_id, entry_id, prize, drawn_by, tier_id) " +
     "SELECT ?, c.id, ?, ?, ? FROM checkin_entries c " +
     "WHERE c.event_id = ? AND c.checked_in = 1 " +
+    "AND c.id NOT IN (SELECT value FROM json_each(?)) " +
     "AND NOT EXISTS (SELECT 1 FROM checkin_lottery_wins w WHERE w.event_id = c.event_id AND w.entry_id = c.id) " +
     "ORDER BY RANDOM() LIMIT 1"
   )
-  .bind(eventId, prize, String(staff.id), tier ? tier.id : null, eventId)
+  .bind(eventId, prize, String(staff.id), tier ? tier.id : null, eventId, JSON.stringify(excluded))
   .run();
 
   if (!result.meta.changes) {
@@ -1686,8 +1692,9 @@ async function saveSite(request, env, staff) {
   var cleanPresets = {};
 
   PRESET_KEYS.forEach(function (key) {
+    /* 常用內容可以多行 */
     cleanPresets[key] = cleanList(presets[key], function (text) {
-      text = cleanText(text).slice(0, 200);
+      text = cleanLong(text).slice(0, 1000);
       return text || null;
     });
   });

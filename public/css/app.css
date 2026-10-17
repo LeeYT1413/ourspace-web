@@ -2208,3 +2208,252 @@ h2 {
   font-size: 12px;
   font-weight: 700;
 }
+
+
+/* =========================================================
+   電腦版（螢幕寬 900px 以上）
+========================================================= */
+
+.desk-nav {
+  display: none;
+}
+
+@media (min-width: 900px) {
+
+  .site-header,
+  .app,
+  .site-footer,
+  .site-menu {
+    max-width: 1120px;
+  }
+
+  .site-header {
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+
+  #menuButton {
+    display: none;
+  }
+
+  .desk-nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .desk-link {
+    padding: 8px 14px;
+    color: var(--paper);
+    border-radius: 999px;
+    font-weight: 700;
+  }
+
+  .desk-link:hover {
+    background: var(--night-2);
+  }
+
+  .desk-link.active {
+    background: var(--shu);
+  }
+
+  .desk-login,
+  .desk-member {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 8px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-weight: 700;
+  }
+
+  .desk-login {
+    color: #FFFFFF;
+    background: #06C755;
+  }
+
+  .desk-member {
+    color: var(--ink);
+    background: var(--paper);
+  }
+
+  .desk-member img {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+
+  .section,
+  .page-title,
+  .lead,
+  .chips {
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+
+  .back-link,
+  .login-hint,
+  .seg,
+  .match,
+  .standings {
+    margin-left: 32px;
+    margin-right: 32px;
+  }
+
+  .page-title h1 {
+    font-size: 36px;
+  }
+
+  /* 首頁 */
+  .hero {
+    display: grid;
+    grid-template-columns: 320px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    column-gap: 48px;
+    align-items: center;
+    padding: 48px 32px 56px;
+    text-align: left;
+  }
+
+  .hero-logo {
+    grid-row: 1 / span 2;
+    width: 300px;
+    height: 300px;
+  }
+
+  .hero-title {
+    align-self: end;
+    font-size: 38px;
+    white-space: normal;
+  }
+
+  .hero-actions {
+    align-self: start;
+    max-width: 460px;
+  }
+
+  .hero-sun {
+    width: 360px;
+    height: 360px;
+    right: -80px;
+    top: 0;
+  }
+
+  .quick {
+    padding: 8px 32px 32px;
+    gap: 16px;
+  }
+
+  .quick-item {
+    min-height: 96px;
+    font-size: 16px;
+  }
+
+  .home-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .home-col .section {
+    padding-left: 32px;
+    padding-right: 16px;
+  }
+
+  .home-col + .home-col .section {
+    padding-left: 16px;
+    padding-right: 32px;
+  }
+
+  /* 賽事名單：兩欄卡片 */
+  .event-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .bottom-bar {
+    flex-direction: row;
+    align-items: center;
+    max-width: 1120px;
+    padding-left: 32px;
+    padding-right: 32px;
+    border-radius: 18px 18px 0 0;
+  }
+
+  .bottom-bar .bottom-info {
+    flex: 1;
+    flex-direction: column;
+  }
+
+  .bottom-bar .pill {
+    width: 360px;
+  }
+
+  .sheet {
+    justify-content: center;
+    align-items: center;
+  }
+
+  .sheet-body {
+    max-width: 560px;
+    border-radius: 22px;
+    border: 3px solid var(--shu);
+  }
+
+  /* 報名名單、排行榜：兩欄 */
+  .roster-list,
+  .rank-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .roster-list > .state,
+  .rank-list > .state {
+    grid-column: 1 / -1;
+  }
+
+  .podium {
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  /* 戰隊、公告：多欄 */
+  .team-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .news-list {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .article {
+    max-width: 760px;
+    margin: 0 auto;
+  }
+
+  /* 關於我們 */
+  .about-photo {
+    max-height: 480px;
+  }
+
+  /* 我的窩室、會員資料：維持好讀的寬度 */
+  .form,
+  .me-card {
+    max-width: 640px;
+  }
+
+  .site-footer {
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+
+  .footer-socials {
+    max-width: 480px;
+  }
+}

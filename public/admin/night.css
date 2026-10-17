@@ -322,6 +322,54 @@ input[type="datetime-local"] {
   padding: 16px 16px 140px;
 }
 
+/* 電腦版：內容放寬，卡片排成多欄；表單維持好讀的寬度 */
+@media (min-width: 1000px) {
+
+  .main {
+    max-width: 1180px;
+    padding: 24px 32px 140px;
+  }
+
+  .ck-cards {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    align-items: start;
+  }
+
+  .ck-form,
+  .ck-area,
+  .ck-select-wrap,
+  .ck-seg {
+    max-width: 760px;
+  }
+
+  .ck-results {
+    max-width: 760px;
+  }
+
+  .ck-lot {
+    grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr);
+    grid-template-areas:
+      "top top"
+      "stage stats"
+      "stage tiers"
+      "stage controls"
+      "stage winners";
+    align-content: start;
+  }
+
+  /* 底部按鈕列：整條貼底，按鈕和表單對齊（表單最寬 760px） */
+  .ck-bottom-bar {
+    left: 0;
+    right: 0;
+    max-width: none;
+    transform: none;
+    border-radius: 0;
+    padding-left: max(32px, calc((100vw - 1180px) / 2 + 32px));
+    padding-right: max(32px, calc(100vw - 760px - max(32px, calc((100vw - 1180px) / 2 + 32px))));
+  }
+}
+
 .view-head h1 {
   font-size: 26px;
   font-weight: 900;

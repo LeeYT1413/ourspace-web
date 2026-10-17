@@ -352,6 +352,40 @@
         h("span", { "aria-hidden": "true", text: "›" })
       ]));
     });
+
+    /* 電腦版：選單直接排在頂部 */
+    var desk = document.getElementById("deskNav");
+
+    if (desk) {
+
+      clear(desk);
+
+      items.forEach(function (item) {
+        desk.appendChild(h("a", { class: "desk-link", href: "#" + item[0], "data-page": item[0], text: item[1] }));
+      });
+
+      desk.appendChild(state.member
+        ? h("a", { class: "desk-member", href: "#me" }, [
+            state.member.avatar_url ? h("img", { src: state.member.avatar_url, alt: "", width: "28", height: "28" }) : null,
+            state.member.nickname || "我的窩室"
+          ])
+        : h("a", { class: "desk-login", href: loginUrl("#me") }, [h("span", { class: "line-badge", text: "LINE" }), "會員登入"]));
+
+      markDeskNav();
+    }
+  }
+
+  function markDeskNav(page) {
+
+    page = page || (window.location.hash || "#home").slice(1).split("/")[0];
+
+    if (page === "roster") {
+      page = "events";
+    }
+
+    Array.prototype.forEach.call(document.querySelectorAll(".desk-link"), function (link) {
+      link.classList.toggle("active", link.getAttribute("data-page") === page);
+    });
   }
 
   function renderFooter(site) {
@@ -391,6 +425,7 @@
     clearInterval(state.leagueTimer);
     clearInterval(state.carouselTimer);
     closeMenu();
+    markDeskNav(page);
 
     clear(app);
     app.appendChild(stateText("載入中…"));
@@ -476,10 +511,19 @@
 
     app.appendChild(quick);
 
+    /* 電腦版排成兩欄：左（下場比賽、恭喜上位）右（輪播、公告） */
+    var grid = h("div", { class: "home-grid" });
+    var colA = h("div", { class: "home-col" });
+    var colB = h("div", { class: "home-col" });
+
+    grid.appendChild(colA);
+    grid.appendChild(colB);
+    app.appendChild(grid);
+
     /* ---------- 下場比賽 ---------- */
 
     var nextBox = h("section", { class: "section" }, [stateText("載入中…")]);
-    app.appendChild(nextBox);
+    colA.appendChild(nextBox);
 
     loadEvents(true)
       .then(function (events) {
@@ -521,7 +565,7 @@
     /* ---------- 恭喜上位 ---------- */
 
     var winBox = h("section", { class: "section" });
-    app.appendChild(winBox);
+    colA.appendChild(winBox);
 
     api("/api/checkin/highlights")
       .then(function (response) {
@@ -549,7 +593,7 @@
     /* ---------- 輪播照片 ---------- */
 
     var galleryBox = h("section", { class: "section" });
-    app.appendChild(galleryBox);
+    colB.appendChild(galleryBox);
 
     api("/api/news/images")
       .then(function (response) {
@@ -563,7 +607,7 @@
     /* ---------- 最新公告 ---------- */
 
     var newsBox = h("section", { class: "section" });
-    app.appendChild(newsBox);
+    colB.appendChild(newsBox);
 
     api("/api/news")
       .then(function (response) {
