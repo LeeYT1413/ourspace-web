@@ -5,6 +5,8 @@
    /api/admin/*    管理員
    /api/referee/*  裁判計分
    /api/referee/checkin/*、/api/checkin/*  報到 / 名單 / 抽獎
+   /api/member/*                           會員（LINE 登入）
+   /api/referee/members/*                  審核中心、會員管理
    /api/*          官網公開 API
    其他            靜態檔案（public/）
 ========================================================= */
@@ -14,6 +16,8 @@ import { handleAuthApi } from "./auth.js";
 import { handleAdminApi } from "./admin-api.js";
 import { handleRefereeApi } from "./referee-api.js";
 import { handleCheckinApi } from "./checkin-api.js";
+import { handleMemberApi } from "./member-api.js";
+import { handleMemberAdminApi } from "./member-admin-api.js";
 import { errorResponse } from "./util.js";
 
 
@@ -40,6 +44,10 @@ export default {
         response = await handleAuthApi(request, url, env);
       } else if (pathname.indexOf("/api/admin/") === 0) {
         response = await handleAdminApi(request, url, env);
+      } else if (pathname.indexOf("/api/member/") === 0) {
+        response = await handleMemberApi(request, url, env);
+      } else if (pathname.indexOf("/api/referee/members/") === 0) {
+        response = await handleMemberAdminApi(request, url, env);
       } else if (
         pathname.indexOf("/api/referee/checkin/") === 0 ||
         pathname === "/api/referee/checkin" ||

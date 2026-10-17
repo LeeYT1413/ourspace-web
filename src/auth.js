@@ -47,7 +47,9 @@ export var WEB_PAGE_KEYS = [
   "news",
   "news_images",
   "contact_messages",
-  "site_settings"
+  "site_settings",
+  "review",
+  "members"
 ];
 
 /* 頁面固定、不看 ERP 設定的角色 */

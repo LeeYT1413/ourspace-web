@@ -27,7 +27,14 @@
     INVALID_NAME: "參賽名稱不可空白、最多 50 字，且不能包含 < >。",
     INVALID_PHONE: "電話格式不正確。",
     TOO_MANY_NAMES: "一次最多幫 10 位報名。",
-    REQUIRED: "請填寫參賽名稱。"
+    REQUIRED: "請填寫參賽名稱。",
+    LOGIN_REQUIRED: "請先登入會員。",
+    PROFILE_REQUIRED: "請先完成會員資料。",
+    ALREADY_CHECKED_IN: "已經報到，不能取消了。",
+    ALREADY_PENDING: "這筆選手資料已經在審核中。",
+    ALREADY_CLAIMED: "這筆選手資料已經是你的了。",
+    IMAGE_TOO_LARGE: "圖片太大了，請換一張小一點的。",
+    TEAM_NOT_FOUND: "找不到這個戰隊。"
   };
 
   var state = {
@@ -35,6 +42,7 @@
     events: null,
     today: "",
     staff: null,
+    member: null,
     leagueTimer: null,
     carouselTimer: null,
     selected: [],
@@ -118,6 +126,22 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
+  }
+
+  function memberApi(method, path, body) {
+    return api("/api/member" + path, {
+      method: method,
+      headers: { "Content-Type": "application/json", "X-OurSpace-Member": "1" },
+      body: body === undefined ? undefined : JSON.stringify(body)
+    });
+  }
+
+  function errorText(error, fallback) {
+    return ERRORS[error && error.code] || fallback || "發生錯誤，請稍後再試。";
+  }
+
+  function loginUrl(back) {
+    return "/api/member/line/login?return=" + encodeURIComponent(back || window.location.hash || "#me");
   }
 
   var toastTimer = null;
@@ -246,6 +270,17 @@
       });
   }
 
+  function loadMember() {
+
+    return api("/api/member/me?_=" + Date.now())
+      .then(function (response) {
+        state.member = response.member || null;
+      })
+      .catch(function () {
+        state.member = null;
+      });
+  }
+
   function isSysadmin() {
     return !!state.staff && state.staff.role === "sysadmin";
   }
@@ -290,10 +325,26 @@
     ];
 
     if (isSysadmin()) {
-      items.push(["league", "戰隊聯賽（僅管理員）"]);
+      items.push(["league", "戰隊聯賽"]);
     }
 
     clear(links);
+
+    var memberBox = document.getElementById("menuMember");
+    clear(memberBox);
+
+    if (state.member) {
+      memberBox.appendChild(h("div", { class: "menu-member" }, [
+        state.member.avatar_url ? h("img", { src: state.member.avatar_url, alt: "", width: "40", height: "40" }) : h("span", { class: "avatar avatar-empty", style: "width: 40px; height: 40px", text: "◎" }),
+        h("strong", { class: "grow", text: state.member.nickname || state.member.line_name }),
+        h("a", { class: "pill pill-paper", href: "#me", onClick: closeMenu, text: "我的窩室" })
+      ]));
+    } else {
+      memberBox.appendChild(h("a", { class: "menu-login", href: loginUrl(window.location.hash || "#me") }, [
+        h("span", { class: "line-badge", text: "LINE" }),
+        "會員登入"
+      ]));
+    }
 
     items.forEach(function (item) {
       links.appendChild(h("a", { class: "menu-link", href: "#" + item[0], onClick: closeMenu }, [
@@ -345,7 +396,15 @@
     app.appendChild(stateText("載入中…"));
     window.scrollTo(0, 0);
 
+    if (page === "login-error" || page === "login-disabled") {
+      toast(page === "login-error" ? "LINE 登入沒有成功，請再試一次。" : "這個會員帳號已停用，請洽店家。", "error");
+      window.location.replace("#home");
+      return;
+    }
+
     var pages = {
+      join: renderJoin,
+      me: renderMe,
       home: renderHome,
       events: renderEvents,
       roster: renderRoster,
@@ -365,7 +424,9 @@
       teams: "陀螺戰隊",
       news: "最新消息",
       about: "關於我們",
-      league: "戰隊聯賽"
+      league: "戰隊聯賽",
+      join: "會員資料",
+      me: "我的窩室"
     };
 
     document.title = titles[page] ? titles[page] + "｜窩室 OURSPACE" : "窩室 OURSPACE｜戰鬥陀螺對戰空間";
@@ -690,6 +751,13 @@
     app.appendChild(pageTitle("賽事名單", "EVENTS"));
     app.appendChild(h("p", { class: "lead", text: "勾選想參加的大型賽事，可以一次報名多場、幫朋友一起報。" }));
 
+    if (!state.member) {
+      app.appendChild(h("div", { class: "login-hint" }, [
+        h("span", { class: "grow", text: "不用登入也能報名。登入會員會自動帶入暱稱，還能在「我的窩室」看紀錄。" }),
+        h("a", { class: "pill pill-line", href: loginUrl("#events"), text: "LINE 登入" })
+      ]));
+    }
+
     if (!events.length) {
       app.appendChild(stateText("目前沒有今天或之後的場次。"));
       return;
@@ -765,7 +833,7 @@
         class: "pill pill-red pill-big pill-block",
         type: "button",
         disabled: !state.selected.length,
-        onClick: function () { openSignup(events); },
+        onClick: function () { if (state.member) { openMemberSignup(events); } else { openSignup(events); } },
         text: state.selected.length ? "報名" : "先勾選要報名的大型賽事"
       })
     ]);
@@ -961,6 +1029,9 @@
       return (a.checkin_number || 9999) - (b.checkin_number || 9999);
     }).concat(entries.filter(function (e) { return Number(e.checked_in) !== 1; }));
 
+    /* 自己排第一筆 */
+    ordered = ordered.filter(function (e) { return e.is_me; }).concat(ordered.filter(function (e) { return !e.is_me; }));
+
     var stats = big && event.capacity
       ? [["已報名", entries.length, "navy"], ["名額", event.capacity, "sand"], ["剩餘", Math.max(0, event.capacity - entries.length), "red"]]
       : [["已報名", entries.length, "navy"], ["已報到", checked.length, "red"]];
@@ -1063,12 +1134,13 @@
           order = entries.indexOf(e) + 1;
         }
 
-        list.appendChild(h("div", { class: "roster-row" + (on ? " on" : "") }, [
+        list.appendChild(h("div", { class: "roster-row" + (on ? " on" : "") + (e.is_me ? " is-me" : "") }, [
           h("span", { class: "num" + (on ? " on" : ""), text: on && e.checkin_number ? String(e.checkin_number) : String(order) }),
           h("span", { class: "grow" }, [
             h("strong", { text: e.nickname + (Number(e.is_judge) === 1 ? " ㊣" : "") }),
             e.team_name ? h("span", { class: "muted small", text: e.team_name }) : null
           ]),
+          e.is_me ? h("span", { class: "me-tag", text: "我" }) : null,
           h("span", { class: "roster-status" + (on ? " on" : ""), text: on ? "已報到" : "待報到" })
         ]));
       });
@@ -1605,13 +1677,780 @@
 
 
   /* =======================================================
+     會員：報名（自己 / 會員 / 直接輸入名字）
+  ======================================================= */
+
+  function openMemberSignup(events) {
+
+    var chosen = events.filter(function (e) { return state.selected.indexOf(e.id) !== -1; });
+    var me = state.member;
+    var self = true;
+    var mode = "member";
+    var picked = [];
+    var nameList = h("div", { class: "name-list" });
+    var pickedBox = h("div", { class: "chip-list" });
+    var results = h("div", { class: "pick-results" });
+    var modeBox = h("div", {});
+
+    var selfBtn = h("button", { class: "check-row on", type: "button", role: "checkbox", "aria-checked": "true" }, [
+      h("span", { class: "check-box", text: "✓" }),
+      h("span", { class: "grow" }, [h("strong", { text: "幫自己報名" }), h("span", { class: "muted small", text: "暱稱：" + me.nickname })])
+    ]);
+
+    selfBtn.addEventListener("click", function () {
+      self = !self;
+      selfBtn.classList.toggle("on", self);
+      selfBtn.setAttribute("aria-checked", self ? "true" : "false");
+      selfBtn.firstChild.textContent = self ? "✓" : "";
+    });
+
+    function drawPicked() {
+
+      clear(pickedBox);
+
+      picked.forEach(function (m, i) {
+        pickedBox.appendChild(h("span", { class: "pick-chip" }, [
+          m.nickname,
+          h("button", { type: "button", "aria-label": "移除 " + m.nickname, onClick: function () { picked.splice(i, 1); drawPicked(); }, text: "×" })
+        ]));
+      });
+    }
+
+    function addName(value) {
+
+      var input = h("input", { type: "text", maxlength: "50", placeholder: "參賽名稱", "aria-label": "參賽名稱" });
+      input.value = value || "";
+
+      var row = h("div", { class: "name-row" }, [
+        input,
+        h("button", { class: "x-btn", type: "button", "aria-label": "移除這位", onClick: function () { nameList.removeChild(row); }, text: "×" })
+      ]);
+
+      nameList.appendChild(row);
+      input.focus();
+    }
+
+    var searchTimer = null;
+    var search = h("input", { type: "search", placeholder: "輸入暱稱或電話末三碼", "aria-label": "找會員", autocomplete: "off" });
+
+    search.addEventListener("input", function () {
+
+      clearTimeout(searchTimer);
+
+      var q = search.value.trim();
+
+      if (!q) {
+        clear(results);
+        return;
+      }
+
+      searchTimer = setTimeout(function () {
+        memberApi("GET", "/search?q=" + encodeURIComponent(q)).then(function (response) {
+
+          clear(results);
+
+          (response.data || []).forEach(function (m) {
+
+            var already = picked.some(function (p) { return p.id === m.id; });
+
+            results.appendChild(h("div", { class: "pick-row" }, [
+              h("span", { class: "grow" }, [
+                h("strong", { text: m.nickname }),
+                h("span", { class: "muted small", text: (m.team_name ? m.team_name + "・" : "") + (m.phone_tail || "") })
+              ]),
+              h("button", {
+                class: "pill pill-red",
+                type: "button",
+                disabled: already,
+                onClick: function () { picked.push(m); drawPicked(); clear(results); search.value = ""; },
+                text: already ? "已加入" : "加入"
+              })
+            ]));
+          });
+
+          if (!results.children.length) {
+            results.appendChild(h("p", { class: "muted small", text: "找不到會員，可以改用「直接輸入名字」。" }));
+          }
+        }).catch(function () {});
+      }, 250);
+    });
+
+    var modeTabs = h("div", { class: "seg seg-inline" });
+
+    function drawMode() {
+
+      clear(modeTabs);
+
+      [["member", "找會員"], ["name", "直接輸入名字"]].forEach(function (t) {
+        modeTabs.appendChild(h("button", {
+          class: "seg-btn" + (mode === t[0] ? " active" : ""),
+          type: "button",
+          onClick: function () { mode = t[0]; drawMode(); },
+          text: t[1]
+        }));
+      });
+
+      clear(modeBox);
+
+      if (mode === "member") {
+        modeBox.appendChild(search);
+        modeBox.appendChild(results);
+        modeBox.appendChild(h("p", { class: "muted small", text: "幫會員報名，他報到後會有參賽紀錄。" }));
+      } else {
+        modeBox.appendChild(nameList);
+        modeBox.appendChild(h("button", { class: "dash-btn", type: "button", onClick: function () { addName(""); }, text: "＋ 再加一位" }));
+        modeBox.appendChild(h("p", { class: "muted small", text: "對方不是會員也能報名，但不會留下參賽紀錄。" }));
+
+        if (!nameList.children.length) {
+          addName("");
+        }
+      }
+    }
+
+    var submit = h("button", { class: "pill pill-red pill-big pill-block", type: "button", text: "送出報名" });
+
+    var sheet = h("div", { class: "sheet", role: "dialog", "aria-modal": "true", "aria-label": "報名" }, [
+      h("div", { class: "sheet-backdrop", onClick: close }),
+      h("div", { class: "sheet-body" }, [
+        h("div", { class: "sheet-head" }, [
+          h("div", {}, [
+            h("strong", { class: "serif", text: "報名" }),
+            h("div", { class: "muted", text: chosen.map(function (e) { return e.title; }).join("、") })
+          ]),
+          h("button", { class: "round-btn round-btn-ghost", type: "button", "aria-label": "關閉", onClick: close, text: "×" })
+        ]),
+        selfBtn,
+        h("span", { class: "label", text: "幫別人報名（選填）" }),
+        modeTabs,
+        pickedBox,
+        modeBox,
+        h("p", { class: "muted small", text: "報到前都可以到「我的窩室」取消。" }),
+        submit
+      ])
+    ]);
+
+    function close() {
+      if (sheet.parentNode) {
+        sheet.parentNode.removeChild(sheet);
+      }
+      document.body.classList.remove("sheet-open");
+    }
+
+    submit.addEventListener("click", function () {
+
+      var names = Array.prototype.map.call(nameList.querySelectorAll("input"), function (input) {
+        return input.value.trim();
+      }).filter(Boolean);
+
+      if (!self && !picked.length && !names.length) {
+        toast("請選擇要報名的人。", "error");
+        return;
+      }
+
+      submit.disabled = true;
+
+      memberApi("POST", "/register", {
+        event_ids: state.selected,
+        self: self,
+        member_ids: picked.map(function (m) { return m.id; }),
+        names: names
+      })
+        .then(function (response) {
+
+          close();
+
+          var added = 0;
+          var dup = 0;
+
+          (response.data || []).forEach(function (row) {
+            added += row.added;
+            dup += row.duplicates;
+          });
+
+          state.selected = [];
+          toast("報名完成！共 " + added + " 筆" + (dup ? "（" + dup + " 筆已經報名過）" : "") + "。", "success");
+          renderEvents();
+        })
+        .catch(function (error) {
+
+          var text = errorText(error, "報名失敗，請稍後再試。");
+
+          if (error.data && error.data.title) {
+            text = "「" + error.data.title + "」" + text + (error.code === "EVENT_FULL" ? "，只剩 " + error.data.left + " 個名額。" : "。");
+          }
+
+          toast(text, "error");
+        })
+        .then(function () {
+          submit.disabled = false;
+        });
+    });
+
+    drawMode();
+
+    document.body.appendChild(sheet);
+    document.body.classList.add("sheet-open");
+  }
+
+
+  /* =======================================================
+     會員：第一次登入填資料 / 修改資料
+  ======================================================= */
+
+  function renderJoin() {
+
+    if (!state.member) {
+      clear(app);
+      app.appendChild(pageTitle("會員登入", "MEMBER"));
+      app.appendChild(h("section", { class: "section" }, [
+        h("a", { class: "pill pill-line pill-big pill-block", href: loginUrl("#me"), text: "使用 LINE 登入" })
+      ]));
+      return;
+    }
+
+    api("/api/teams").then(function (response) {
+
+      var me = state.member;
+      var first = me.needs_profile;
+
+      clear(app);
+      app.appendChild(pageTitle(first ? "完成會員資料" : "修改會員資料", "MEMBER"));
+
+      app.appendChild(h("section", { class: "section" }, [
+        h("div", { class: "line-linked" }, [
+          me.avatar_url ? h("img", { src: me.avatar_url, alt: "", width: "56", height: "56" }) : h("span", { class: "avatar avatar-empty", style: "width: 56px; height: 56px", text: "◎" }),
+          h("div", {}, [h("span", { class: "muted small", text: "LINE 已連結" }), h("strong", { text: me.line_name || "" })])
+        ])
+      ]));
+
+      var nickname = h("input", { type: "text", maxlength: "50", placeholder: "例如：小明", autocomplete: "nickname" });
+      var phone = h("input", { type: "tel", inputmode: "tel", placeholder: "09xx-xxx-xxx", autocomplete: "tel" });
+      var team = h("select", { class: "select" });
+
+      nickname.value = me.nickname || me.line_name || "";
+      phone.value = me.phone || "";
+
+      team.appendChild(h("option", { value: "", text: "不選（之後也可以在「我的窩室」申請）" }));
+
+      (response.data || []).forEach(function (t) {
+        var option = h("option", { value: String(t.id), text: t.team_name });
+        option.selected = t.id === me.primary_team_id;
+        team.appendChild(option);
+      });
+
+      var save = h("button", { class: "pill pill-red pill-big pill-block", type: "button", text: first ? "完成註冊" : "儲存" });
+
+      save.addEventListener("click", function () {
+
+        save.disabled = true;
+
+        memberApi("PUT", "/profile", { nickname: nickname.value.trim(), phone: phone.value.trim(), primary_team_id: team.value || null })
+          .then(function (res) {
+            state.member = res.member;
+            renderMenu();
+            toast(first ? "歡迎加入窩室會員！" : "資料已更新。", "success");
+            window.location.hash = "#me";
+          })
+          .catch(function (error) {
+            toast(errorText(error, "儲存失敗。") + (error.code === "INVALID_PHONE" ? "（請填 8 碼以上的手機號碼）" : ""), "error");
+          })
+          .then(function () {
+            save.disabled = false;
+          });
+      });
+
+      app.appendChild(h("section", { class: "section form" }, [
+        h("label", { class: "field" }, [h("span", { class: "label", text: "暱稱（報名時顯示的名稱）" }), nickname]),
+        h("label", { class: "field" }, [
+          h("span", { class: "label", text: "手機號碼" }),
+          phone,
+          h("span", { class: "muted small", text: "店內結帳時，店員會用電話幫你找到會員資料。" })
+        ]),
+        h("label", { class: "field" }, [
+          h("span", { class: "label", text: "主要戰隊（選填）" }),
+          team,
+          h("span", { class: "muted small", text: "加入戰隊需要隊長核准。" })
+        ]),
+        save
+      ]));
+    });
+  }
+
+
+  /* =======================================================
+     會員：我的窩室
+  ======================================================= */
+
+  function renderMe() {
+
+    if (!state.member) {
+      renderJoin();
+      return;
+    }
+
+    var me = state.member;
+    var tab = state.meTab || "signups";
+    var body = h("div", {});
+
+    clear(app);
+
+    app.appendChild(h("section", { class: "section section-top" }, [
+      h("div", { class: "paper-card me-card" }, [
+        me.avatar_url ? h("img", { class: "me-avatar", src: me.avatar_url, alt: "" }) : h("span", { class: "me-avatar avatar-empty", text: "◎" }),
+        h("div", { class: "grow" }, [
+          h("span", { class: "kicker red", text: "我的窩室" }),
+          h("strong", { class: "paper-title", text: me.nickname }),
+          h("span", { class: "paper-sub", text: (me.primary_team_name ? "主要戰隊：" + me.primary_team_name + "・" : "") + String(me.phone || "").replace(/(\d{4})\D*\d{3}\D*(\d{3})/, "$1-***-$2") })
+        ]),
+        h("a", { class: "round-btn round-btn-ink", href: "#join", "aria-label": "修改會員資料", text: "✎" })
+      ])
+    ]));
+
+    var tabs = h("div", { class: "seg" });
+
+    [["signups", "報名"], ["history", "參賽"], ["placements", "上位"], ["teams", "戰隊"]].forEach(function (t) {
+      tabs.appendChild(h("button", {
+        class: "seg-btn" + (tab === t[0] ? " active" : ""),
+        type: "button",
+        onClick: function () { state.meTab = t[0]; renderMe(); },
+        text: t[1]
+      }));
+    });
+
+    app.appendChild(tabs);
+    app.appendChild(body);
+
+    app.appendChild(h("section", { class: "section" }, [
+      h("button", {
+        class: "pill pill-ghost pill-block",
+        type: "button",
+        onClick: function () {
+          memberApi("POST", "/logout", {}).catch(function () {}).then(function () {
+            state.member = null;
+            renderMenu();
+            window.location.hash = "#home";
+          });
+        },
+        text: "登出"
+      })
+    ]));
+
+    body.appendChild(stateText("載入中…"));
+
+    ({ signups: meSignups, history: meHistory, placements: mePlacements, teams: meTeams })[tab](body);
+  }
+
+
+  function meSignups(body) {
+
+    memberApi("GET", "/signups?_=" + Date.now()).then(function (response) {
+
+      clear(body);
+
+      var list = response.data || [];
+      var box = h("section", { class: "section" }, [sectionTitle("已報名的賽事", h("a", { class: "more", href: "#events", text: "去報名 ›" }))]);
+
+      if (!list.length) {
+        box.appendChild(stateText("還沒有報名。"));
+      }
+
+      list.forEach(function (row) {
+        box.appendChild(h("div", { class: "night-card list-card" }, [
+          h("div", { class: "grow" }, [
+            h("strong", { text: row.title }),
+            h("span", { class: "muted small", text: dateLabel(row.event_date, row.start_time) + "・" + (row.is_self ? "自己" : "幫 " + row.nickname + " 報名") + (Number(row.checked_in) === 1 ? "・已報到 " + (row.checkin_number || "") : "") })
+          ]),
+          row.can_cancel ? h("button", {
+            class: "pill pill-ghost",
+            type: "button",
+            onClick: function () {
+              if (!window.confirm("取消「" + row.nickname + "」在「" + row.title + "」的報名？")) {
+                return;
+              }
+              memberApi("DELETE", "/signups/" + row.id).then(function () {
+                toast("已取消報名。", "success");
+                meSignups(body);
+              }).catch(function (error) {
+                toast(errorText(error), "error");
+              });
+            },
+            text: "取消"
+          }) : null
+        ]));
+      });
+
+      box.appendChild(h("p", { class: "muted small", text: "報到前都可以取消；報到後就不能取消了。" }));
+      body.appendChild(box);
+    }).catch(function () {
+      clear(body);
+      body.appendChild(stateText("載入失敗。", "error"));
+    });
+  }
+
+
+  function meHistory(body) {
+
+    memberApi("GET", "/history").then(function (response) {
+
+      clear(body);
+
+      var list = response.data || [];
+      var box = h("section", { class: "section" }, [sectionTitle("參賽紀錄", h("span", { class: "muted small", text: "共 " + list.length + " 場（有報到的才算）" }))]);
+
+      if (!list.length) {
+        box.appendChild(stateText("還沒有參賽紀錄。"));
+      }
+
+      list.forEach(function (row) {
+        box.appendChild(h("div", { class: "history-row" }, [
+          h("span", { class: "history-date", text: dateLabel(row.event_date).replace(/（.）/, "") }),
+          h("strong", { class: "grow", text: row.title + (row.rank_label ? "・" + row.rank_label : "") }),
+          h("span", { class: "muted small", text: row.checkin_number ? "No." + row.checkin_number : "" })
+        ]));
+      });
+
+      body.appendChild(box);
+    });
+  }
+
+
+  function mePlacements(body) {
+
+    memberApi("GET", "/placements").then(function (response) {
+
+      clear(body);
+
+      var box = h("section", { class: "section" }, [sectionTitle("上位紀錄")]);
+
+      if (!(response.placements || []).length) {
+        box.appendChild(stateText("還沒有上位紀錄。認領以前的選手資料，紀錄就會算進來。"));
+      }
+
+      (response.placements || []).forEach(function (row) {
+        box.appendChild(h("div", { class: "night-card win-row" }, [
+          h("span", { class: "medal medal-" + placeStyle(placeName(row.placement)), text: placeName(row.placement) }),
+          h("div", { class: "grow" }, [
+            h("strong", { text: row.event_name }),
+            h("span", { class: "muted", text: dateLabel(row.event_date) + "・" + row.participant_count + " 人" + (row.team_name ? "・代表 " + row.team_name : "") })
+          ])
+        ]));
+      });
+
+      body.appendChild(box);
+
+      /* ---------- 認領選手資料 ---------- */
+
+      var claim = h("section", { class: "section" }, [
+        h("div", { class: "dash-card" }, [
+          h("strong", { text: "認領選手資料" }),
+          h("p", { class: "muted small", text: "以前的上位紀錄是用選手名稱登記的。認領後經店家審核，紀錄就會算進你的會員資料。" })
+        ])
+      ]);
+
+      var card = claim.firstChild;
+
+      (response.players || []).forEach(function (p) {
+        card.appendChild(h("div", { class: "claim-row" }, [
+          h("span", { class: "grow", text: p.player_name + (p.team_name ? "・" + p.team_name : "") }),
+          h("span", { class: "tag tag-green", text: "已認領" })
+        ]));
+      });
+
+      (response.claims || []).filter(function (c) { return c.status !== "approved"; }).forEach(function (c) {
+        card.appendChild(h("div", { class: "claim-row" }, [
+          h("span", { class: "grow", text: c.player_name + (c.team_name ? "・" + c.team_name : "") + (c.note ? "（" + c.note + "）" : "") }),
+          h("span", { class: "tag " + (c.status === "pending" ? "tag-gold" : "tag-done"), text: c.status === "pending" ? "審核中" : "未通過" }),
+          c.status === "pending" ? h("button", {
+            class: "x-btn x-small",
+            type: "button",
+            "aria-label": "取消申請",
+            onClick: function () {
+              memberApi("DELETE", "/claims/" + c.id).then(function () { mePlacements(body); });
+            },
+            text: "×"
+          }) : null
+        ]));
+      });
+
+      var search = h("input", { type: "search", placeholder: "搜尋選手名稱", "aria-label": "搜尋選手名稱" });
+      var found = h("div", { class: "pick-results" });
+      var timer = null;
+
+      search.addEventListener("input", function () {
+
+        clearTimeout(timer);
+
+        var q = search.value.trim();
+
+        if (!q) {
+          clear(found);
+          return;
+        }
+
+        timer = setTimeout(function () {
+          memberApi("GET", "/players?q=" + encodeURIComponent(q)).then(function (res) {
+
+            clear(found);
+
+            (res.data || []).forEach(function (p) {
+              found.appendChild(h("div", { class: "pick-row" }, [
+                h("span", { class: "grow" }, [
+                  h("strong", { text: p.player_name }),
+                  h("span", { class: "muted small", text: (p.team_name || "未加入戰隊") + "・上位 " + p.upper_count + " 次" + (p.claimed ? "・已被認領" : "") })
+                ]),
+                h("button", {
+                  class: "pill pill-red",
+                  type: "button",
+                  onClick: function () {
+                    memberApi("POST", "/claims", { player_id: p.id }).then(function () {
+                      toast("已送出認領申請，等店家審核。", "success");
+                      mePlacements(body);
+                    }).catch(function (error) {
+                      toast(errorText(error), "error");
+                    });
+                  },
+                  text: "這是我"
+                })
+              ]));
+            });
+
+            if (!found.children.length) {
+              found.appendChild(h("p", { class: "muted small", text: "找不到這個名字。" }));
+            }
+          });
+        }, 250);
+      });
+
+      card.appendChild(search);
+      card.appendChild(found);
+      body.appendChild(claim);
+    });
+  }
+
+
+  function meTeams(body) {
+
+    memberApi("GET", "/teams?_=" + Date.now()).then(function (response) {
+
+      clear(body);
+
+      var mine = response.data || [];
+      var box = h("section", { class: "section" }, [sectionTitle("我的戰隊")]);
+
+      if (!mine.length) {
+        box.appendChild(stateText("還沒有加入戰隊。"));
+      }
+
+      mine.forEach(function (team) {
+
+        var tags = [];
+
+        if (team.status === "pending") {
+          tags.push(h("span", { class: "tag tag-gold", text: "等隊長核准" }));
+        }
+        if (team.is_primary) {
+          tags.push(h("span", { class: "tag tag-red", text: "主要戰隊" }));
+        }
+        if (team.is_captain) {
+          tags.push(h("span", { class: "tag tag-red", text: "隊長" }));
+        }
+
+        box.appendChild(h("div", { class: "night-card list-card" }, [
+          team.team_logo_url ? h("img", { class: "team-mini", src: team.team_logo_url, alt: "" }) : h("span", { class: "team-mini team-logo-empty", text: team.team_name.slice(0, 1) }),
+          h("strong", { class: "grow", text: team.team_name }),
+          h("span", { class: "tags" }, tags),
+          team.status === "active" && !team.is_primary ? h("button", {
+            class: "pill pill-ghost",
+            type: "button",
+            onClick: function () { memberApi("POST", "/teams/" + team.id + "/primary", {}).then(loadMember).then(function () { renderMenu(); meTeams(body); }); },
+            text: "設為主要"
+          }) : null
+        ]));
+      });
+
+      /* 申請加入 */
+      var joinSelect = h("select", { class: "select", "aria-label": "選擇要加入的戰隊" }, [h("option", { value: "", text: "選擇要加入的戰隊" })]);
+
+      (response.teams || []).forEach(function (t) {
+        if (!mine.some(function (m) { return m.id === t.id; })) {
+          joinSelect.appendChild(h("option", { value: String(t.id), text: t.team_name }));
+        }
+      });
+
+      box.appendChild(h("div", { class: "row-gap section-top" }, [
+        joinSelect,
+        h("button", {
+          class: "pill pill-outline",
+          type: "button",
+          onClick: function () {
+            if (!joinSelect.value) {
+              return;
+            }
+            memberApi("POST", "/teams/" + joinSelect.value + "/join", {}).then(function () {
+              toast("已送出申請，等隊長核准。", "success");
+              meTeams(body);
+            });
+          },
+          text: "申請加入"
+        })
+      ]));
+
+      body.appendChild(box);
+
+      /* 隊長管理 */
+      mine.filter(function (t) { return t.is_captain; }).forEach(function (team) {
+        body.appendChild(captainCard(team, body));
+      });
+    });
+  }
+
+
+  function captainCard(team, body) {
+
+    var card = h("div", { class: "paper-card" }, [
+      h("div", { class: "row-between" }, [
+        h("strong", { class: "serif", text: "隊長管理・" + team.team_name }),
+        h("span", { class: "tag tag-red", text: "隊長" })
+      ])
+    ]);
+
+    var pending = team.members.filter(function (m) { return m.status === "pending"; });
+    var active = team.members.filter(function (m) { return m.status === "active"; });
+
+    function act(userId, action, text) {
+      memberApi("POST", "/teams/" + team.id + "/members/" + userId + "/" + action, {}).then(function () {
+        toast(text, "success");
+        meTeams(body);
+      });
+    }
+
+    card.appendChild(h("strong", { class: "small", text: "加入申請（" + pending.length + "）" }));
+
+    pending.forEach(function (m) {
+      card.appendChild(h("div", { class: "member-line" }, [
+        h("span", { class: "grow", text: m.nickname }),
+        h("button", { class: "pill pill-red", type: "button", onClick: function () { act(m.user_id, "approve", "已核准。"); }, text: "核准" }),
+        h("button", { class: "pill pill-ink-outline", type: "button", onClick: function () { act(m.user_id, "remove", "已婉拒。"); }, text: "婉拒" })
+      ]));
+    });
+
+    card.appendChild(h("strong", { class: "small", text: "隊員（" + active.length + "）" }));
+
+    active.forEach(function (m) {
+      card.appendChild(h("div", { class: "member-line" }, [
+        h("span", { class: "grow", text: m.nickname }),
+        h("button", {
+          class: "link-danger",
+          type: "button",
+          onClick: function () {
+            if (window.confirm("把「" + m.nickname + "」移出戰隊？")) {
+              act(m.user_id, "remove", "已移除。");
+            }
+          },
+          text: "移除"
+        })
+      ]));
+    });
+
+    /* 提交修改戰隊介紹 / 隊徽 */
+    var desc = h("textarea", { rows: "4", placeholder: "新的戰隊介紹", "aria-label": "戰隊介紹" });
+    var logoId = null;
+    var logoPreview = h("div", { class: "logo-preview" });
+
+    var logoBtn = h("button", {
+      class: "pill pill-ink-outline",
+      type: "button",
+      onClick: function () {
+        pickImage(function (data) {
+          memberApi("POST", "/images", { mime: "image/jpeg", data: data }).then(function (res) {
+            logoId = res.data.id;
+            clear(logoPreview);
+            logoPreview.appendChild(h("img", { src: res.data.url, alt: "新隊徽預覽" }));
+          }).catch(function (error) {
+            toast(errorText(error), "error");
+          });
+        });
+      },
+      text: "上傳新隊徽"
+    });
+
+    card.appendChild(h("details", { class: "edit-box" }, [
+      h("summary", { text: "提交修改戰隊介紹／隊徽" + (team.edit_status === "pending" ? "（審核中）" : "") }),
+      desc,
+      h("div", { class: "row-gap" }, [logoBtn, logoPreview]),
+      h("button", {
+        class: "pill pill-red pill-block",
+        type: "button",
+        onClick: function () {
+          memberApi("POST", "/teams/" + team.id + "/edit", { description: desc.value, logo_image_id: logoId }).then(function () {
+            toast("已送出，店家審核後就會顯示在官網。", "success");
+            meTeams(body);
+          }).catch(function (error) {
+            toast(errorText(error, "請填寫介紹或上傳隊徽。"), "error");
+          });
+        },
+        text: "送出審核"
+      }),
+      h("span", { class: "small brown", text: "修改需經店家審核後才會顯示在官網。" })
+    ]));
+
+    return h("section", { class: "section" }, [card]);
+  }
+
+
+  /* 手機選圖 → 縮成 600px JPEG → base64 */
+  function pickImage(done) {
+
+    var input = h("input", { type: "file", accept: "image/*" });
+
+    input.addEventListener("change", function () {
+
+      var file = input.files && input.files[0];
+
+      if (!file) {
+        return;
+      }
+
+      var reader = new FileReader();
+
+      reader.onload = function () {
+
+        var img = new Image();
+
+        img.onload = function () {
+          var scale = Math.min(1, 600 / Math.max(img.width, img.height));
+          var canvas = document.createElement("canvas");
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+          done(canvas.toDataURL("image/jpeg", 0.85).split(",")[1]);
+        };
+
+        img.src = reader.result;
+      };
+
+      reader.readAsDataURL(file);
+    });
+
+    input.click();
+  }
+
+
+  /* =======================================================
      初始化
   ======================================================= */
 
   loadSite().then(renderFooter);
 
-  loadStaff().then(function () {
+  Promise.all([loadStaff(), loadMember()]).then(function () {
     renderMenu();
+
+    /* 登入了但還沒填資料，先去填 */
+    if (state.member && state.member.needs_profile && (window.location.hash || "") !== "#join") {
+      window.location.hash = "#join";
+      return;
+    }
+
     route();
   });
 

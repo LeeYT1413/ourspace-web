@@ -1,0 +1,188 @@
+/* =========================================================
+   OURSPACE / 窩室
+   後台：審核中心、會員管理（配色在 night.css，元件沿用 checkin.css）
+========================================================= */
+
+.mm-grow { flex: 1; min-width: 0; }
+
+.mm-sub {
+  display: block;
+  color: #5A4632;
+  font-size: 12px;
+}
+
+.mm-red { color: var(--shu); font-weight: 700; }
+
+.mm-pair {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.mm-box,
+.mm-logo {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  background: #E3D3B5;
+  border-radius: 12px;
+  line-height: 1.4;
+}
+
+.mm-box strong {
+  display: block;
+}
+
+.mm-arrow {
+  align-self: center;
+  color: var(--shu);
+  font-weight: 900;
+}
+
+.mm-logo {
+  text-align: center;
+}
+
+.mm-logo img {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+.mm-new {
+  background: #FFF9EE;
+  border: 2px solid var(--shu);
+}
+
+.mm-text {
+  padding: 8px 10px;
+  background: #E3D3B5;
+  border-radius: 10px;
+  font-size: 14px;
+  white-space: pre-wrap;
+}
+
+.mm-warn {
+  color: #8A2A22;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.mm-history {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.mm-history .mm-sub {
+  color: var(--text-soft);
+}
+
+.mm-row {
+  min-height: 64px;
+}
+
+.mm-off {
+  opacity: 0.6;
+}
+
+.mm-avatar {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--gold);
+}
+
+.mm-avatar-big {
+  width: 56px;
+  height: 56px;
+  flex-basis: 56px;
+}
+
+.mm-avatar-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-soft);
+  background: var(--bg);
+}
+
+.mm-games {
+  text-align: right;
+  line-height: 1.2;
+}
+
+.mm-games strong {
+  display: block;
+  color: var(--yellow);
+  font-family: var(--serif);
+}
+
+.mm-games small {
+  color: var(--text-soft);
+  font-size: 11px;
+}
+
+.mm-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mm-who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mm-who .mm-sub,
+.mm-info .mm-sub,
+.mm-team .mm-sub {
+  color: var(--text-soft);
+}
+
+.mm-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border-radius: 14px;
+}
+
+.mm-line {
+  display: flex;
+  gap: 12px;
+}
+
+.mm-line .mm-sub {
+  flex: 0 0 72px;
+  font-size: 14px;
+}
+
+.mm-line strong {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mm-team {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--panel);
+  border-radius: 12px;
+}
+
+.mm-ok {
+  color: var(--green);
+  font-size: 13px;
+}

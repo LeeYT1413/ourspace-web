@@ -1710,6 +1710,10 @@
       headBtn.appendChild(el("span", "ck-chevron", "›"));
       headBtn.appendChild(el("span", "ck-name", (entry.checkin_number ? entry.checkin_number + "- " : "") + entry.nickname));
 
+      if (entry.user_id) {
+        headBtn.appendChild(el("span", "ck-tag ck-tag-gold", "會員"));
+      }
+
       if (entry.source === "online") {
         headBtn.appendChild(el("span", "ck-tag ck-tag-blue", "線上"));
       }

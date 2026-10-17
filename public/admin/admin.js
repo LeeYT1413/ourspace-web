@@ -298,8 +298,10 @@
     { id: "referee", label: "裁判計分", group: "賽事" },
     { id: "league_matches", label: "戰隊聯賽", group: "賽事" },
     { id: "tournaments", label: "賽事報名（舊）", group: "賽事" },
-    { id: "players", label: "選手／上位登錄", group: "選手與戰隊" },
-    { id: "teams", label: "戰隊", group: "選手與戰隊" },
+    { id: "members", label: "會員管理", group: "會員與戰隊" },
+    { id: "review", label: "審核中心", group: "會員與戰隊" },
+    { id: "players", label: "選手／上位登錄", group: "會員與戰隊" },
+    { id: "teams", label: "戰隊", group: "會員與戰隊" },
     { id: "news", label: "公告", group: "網站" },
     { id: "news_images", label: "輪播照片", group: "網站" },
     { id: "contact_messages", label: "聯絡訊息", group: "網站" },
@@ -323,6 +325,10 @@
 
 
   function stopCheckin() {
+    if (window.OurSpaceMembers) {
+      window.OurSpaceMembers.stop();
+    }
+
     if (window.OurSpaceCheckin) {
       window.OurSpaceCheckin.stop();
     }
@@ -921,6 +927,8 @@
 
     if (tabId === "referee") {
       renderRefereeView();
+    } else if (window.OurSpaceMembers && window.OurSpaceMembers.tabs.indexOf(tabId) !== -1) {
+      window.OurSpaceMembers.render(tabId, byId("adminMain"));
     } else if (window.OurSpaceCheckin && window.OurSpaceCheckin.tabs.indexOf(tabId) !== -1) {
       window.OurSpaceCheckin.render(tabId, byId("adminMain"));
     } else {

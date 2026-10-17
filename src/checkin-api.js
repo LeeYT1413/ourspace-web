@@ -30,6 +30,7 @@ import {
 } from "./util.js";
 
 import { requireStaff, writeAuditLog, canUsePage, MANAGER_ROLES } from "./auth.js";
+import { getMember, registerPeople, cleanEventIds, syncEventToErp } from "./member-api.js";
 
 
 var MAX_NAME_LENGTH = 50;
@@ -324,7 +325,7 @@ async function handlePublic(request, parts, env) {
 
   var results = await env.DB.batch([
     env.DB.prepare(
-      "SELECT c.nickname, c.checked_in, c.checkin_number, c.is_judge, t.team_name " +
+      "SELECT c.nickname, c.checked_in, c.checkin_number, c.is_judge, c.user_id, t.team_name " +
       "FROM checkin_entries c " +
       "LEFT JOIN players p ON p.id = c.player_id " +
       "LEFT JOIN teams t ON t.id = p.team_id " +
@@ -335,12 +336,18 @@ async function handlePublic(request, parts, env) {
     ).bind(event.id)
   ]);
 
+  var member = await getMember(request, env);
+
   event.poster_url = posterOf(event);
   delete event.poster_link;
-  event.entries = results[0].results || [];
+  event.entries = (results[0].results || []).map(function (row) {
+    row.is_me = !!member && row.user_id === member.id;
+    delete row.user_id;
+    return row;
+  });
   event.prizes = results[1].results || [];
 
-  return jsonResponse({ success: true, data: event }, 200, LIVE_CACHE_SECONDS);
+  return jsonResponse({ success: true, data: event }, 200, member ? 0 : LIVE_CACHE_SECONDS);
 
 }
 
@@ -509,7 +516,7 @@ async function handleStaff(request, url, parts, env) {
     }
 
     if (action === "entries" && !extra && method === "GET") {
-      return need(["checkin", "events"]) || listEntries(env, id);
+      return need(["checkin", "events"]) || listEntries(env, id, staff);
     }
 
     if (action === "entries" && !extra && method === "POST") {
@@ -1078,6 +1085,7 @@ async function saveSettle(request, env, staff, id, archive) {
 
     await env.DB.batch(archiveStatements);
 
+    await syncEventToErp(env, id, true);
     await writeAuditLog(env, staff, "archive", "checkin_events", id, { checked: checkedCount });
 
   } else {
@@ -1115,6 +1123,7 @@ async function unarchive(env, staff, id) {
     env.DB.prepare("UPDATE checkin_events SET archived_at = NULL, archived_by = NULL WHERE id = ?").bind(id)
   ]);
 
+  await syncEventToErp(env, id, false);
   await writeAuditLog(env, staff, "unarchive", "checkin_events", id, null);
 
   return jsonResponse({ success: true });
@@ -1128,7 +1137,7 @@ async function unarchive(env, staff, id) {
 
 var ENTRY_SELECT =
   "SELECT c.id, c.event_id, c.nickname, c.player_id, c.checked_in, c.checkin_number, " +
-  "c.is_judge, c.checked_in_at, c.contact_phone, c.source, " +
+  "c.is_judge, c.checked_in_at, c.contact_phone, c.source, c.user_id, " +
   "CASE WHEN w.id IS NULL THEN 0 ELSE 1 END AS has_won " +
   "FROM checkin_entries c " +
   "LEFT JOIN (SELECT MIN(id) AS id, entry_id FROM checkin_lottery_wins GROUP BY entry_id) w ON w.entry_id = c.id ";
@@ -1143,7 +1152,7 @@ async function getEntry(env, id) {
 }
 
 
-async function listEntries(env, eventId) {
+async function listEntries(env, eventId, staff) {
 
   var event = await getEvent(env, eventId);
 
@@ -1159,10 +1168,20 @@ async function listEntries(env, eventId) {
   .bind(eventId)
   .all();
 
+  /* 完整電話只有系統管理員、管理員看得到 */
+  var full = !!staff && MANAGER_ROLES.indexOf(staff.role) !== -1;
+
+  var rows = (result.results || []).map(function (row) {
+    if (row.contact_phone && !full) {
+      row.contact_phone = "末三碼 " + String(row.contact_phone).replace(/\D/g, "").slice(-3);
+    }
+    return row;
+  });
+
   return jsonResponse({
     success: true,
     event: { id: event.id, title: event.title, event_date: event.event_date, archived_at: event.archived_at },
-    data: result.results || []
+    data: rows
   });
 
 }
@@ -1307,7 +1326,7 @@ async function batchUpdate(request, env, staff, eventId) {
 
   await writeAuditLog(env, staff, "checkin", "checkin_events", eventId, { count: ids.length });
 
-  return listEntries(env, eventId);
+  return listEntries(env, eventId, staff);
 
 }
 
@@ -1798,13 +1817,7 @@ async function publicRegister(request, env) {
     return errorResponse("INVALID_PHONE", 400, { field: "phone" });
   }
 
-  var eventIds = [];
-
-  (Array.isArray(body.event_ids) ? body.event_ids : []).forEach(function (id) {
-    if (isPositiveInteger(id) && eventIds.indexOf(Number(id)) === -1) {
-      eventIds.push(Number(id));
-    }
-  });
+  var eventIds = cleanEventIds(body.event_ids);
 
   if (!eventIds.length) {
     return errorResponse("REQUIRED", 400, { field: "event_ids" });
@@ -1814,97 +1827,8 @@ async function publicRegister(request, env) {
     return errorResponse("TOO_MANY_EVENTS", 400);
   }
 
-  /* ---------- 同一個網路連線短時間內的次數限制 ---------- */
-
-  var ip = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For") || "unknown";
-  var ipHash = await sha256Hex("ourspace-signup:" + ip);
-
-  var recent = await env.DB.prepare(
-    "SELECT COUNT(*) AS n FROM signup_attempts WHERE ip_hash = ? AND created_at > datetime('now', ?)"
-  )
-  .bind(ipHash, "-" + SIGNUP_WINDOW_MINUTES + " minutes")
-  .first();
-
-  if (recent && Number(recent.n) >= SIGNUP_MAX_PER_WINDOW) {
-    return errorResponse("RATE_LIMITED", 429);
-  }
-
-  await env.DB.batch([
-    env.DB.prepare("INSERT INTO signup_attempts (ip_hash) VALUES (?)").bind(ipHash),
-    env.DB.prepare("DELETE FROM signup_attempts WHERE created_at < datetime('now', '-1 day')")
-  ]);
-
-  /* ---------- 檢查每一場 ---------- */
-
-  var today = taiwanToday();
-  var now = taiwanNow();
-  var events = [];
-
-  for (var j = 0; j < eventIds.length; j++) {
-
-    var event = await env.DB.prepare(
-      "SELECT e.id, e.title, e.event_type, e.event_date, e.is_public, e.archived_at, e.capacity, e.reg_deadline, " +
-      "(SELECT COUNT(*) FROM checkin_entries c WHERE c.event_id = e.id) AS total " +
-      "FROM checkin_events e WHERE e.id = ?"
-    )
-    .bind(eventIds[j])
-    .first();
-
-    if (!event || Number(event.is_public) !== 1 || event.event_type !== "big" || event.archived_at || event.event_date < today) {
-      return errorResponse("SIGNUP_CLOSED", 409, { event_id: eventIds[j], title: event ? event.title : null });
-    }
-
-    if (event.reg_deadline && event.reg_deadline.replace("T", " ") < now) {
-      return errorResponse("SIGNUP_CLOSED", 409, { event_id: event.id, title: event.title });
-    }
-
-    if (event.capacity && Number(event.total) + names.length > Number(event.capacity)) {
-      return errorResponse("EVENT_FULL", 409, {
-        event_id: event.id,
-        title: event.title,
-        left: Math.max(0, Number(event.capacity) - Number(event.total))
-      });
-    }
-
-    events.push(event);
-  }
-
-  /* ---------- 寫入（同一場已經有相同名稱就略過） ---------- */
-
-  var statement = env.DB.prepare(
-    "INSERT OR IGNORE INTO checkin_entries (event_id, nickname, contact_phone, source, registered_at) " +
-    "VALUES (?, ?, ?, 'online', ?)"
-  );
-
-  var statements = [];
-
-  events.forEach(function (event) {
-    names.forEach(function (name) {
-      statements.push(statement.bind(event.id, name, phone || null, now));
-    });
-  });
-
-  var results = await env.DB.batch(statements);
-  var summary = [];
-  var k = 0;
-
-  events.forEach(function (event) {
-
-    var added = 0;
-
-    names.forEach(function () {
-      added += results[k].meta.changes || 0;
-      k++;
-    });
-
-    summary.push({
-      event_id: event.id,
-      title: event.title,
-      added: added,
-      duplicates: names.length - added
-    });
-  });
-
-  return jsonResponse({ success: true, data: summary }, 201);
+  return registerPeople(request, env, eventIds, names.map(function (name) {
+    return { nickname: name, phone: phone || null };
+  }), null);
 
 }
