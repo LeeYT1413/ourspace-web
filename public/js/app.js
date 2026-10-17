@@ -451,7 +451,7 @@
       h("img", { class: "hero-logo", src: "/images/ourspace-logo.jpg", alt: "窩室熊與戰鬥陀螺主視覺", width: "250", height: "250" }),
       h("h1", { class: "hero-title" }, [
         "天天",
-        h("span", { class: "hero-small", text: "（基本上）" }),
+        h("span", { class: "hero-small", text: "（應該啦）" }),
         "都有比賽的窩室",
         h("span", { class: "gold", text: "最暖心" })
       ]),
@@ -1512,7 +1512,7 @@
 
       app.appendChild(h("section", { class: "section" }, [
         h("div", { class: "paper-card" }, [
-          h("strong", { class: "paper-title" }, ["天天", h("span", { class: "hero-small red", text: "（基本上）" }), "都有比賽的窩室"]),
+          h("strong", { class: "paper-title" }, ["天天", h("span", { class: "hero-small red", text: "（應該啦）" }), "都有比賽的窩室"]),
           h("div", { class: "pre about-text", text: about.text || "窩室是高雄的戰鬥陀螺對戰空間，歡迎新手和老手一起來轉。" })
         ])
       ]));
