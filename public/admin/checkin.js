@@ -596,6 +596,20 @@
     tags.appendChild(el("span", "ck-tag " + (big ? "ck-tag-red" : "ck-tag-navy"), big ? "大型賽事" : "日常賽"));
 
     var statusText = { upcoming: big ? "報名中" : "進行中", pending: "已結束", archived: "已封存" }[event.group];
+
+    /* 大型賽事：額滿或超過開始時間／報名截止，就停止線上報名 */
+    if (big && event.group === "upcoming") {
+
+      var nowText = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 16).replace("T", " ");
+      var started = event.start_time && event.event_date + " " + event.start_time <= nowText;
+      var pastDeadline = event.reg_deadline && event.reg_deadline.replace("T", " ") < nowText;
+
+      if (event.capacity && Number(event.total) >= Number(event.capacity)) {
+        statusText = "額滿";
+      } else if (started || pastDeadline) {
+        statusText = "報名截止";
+      }
+    }
     var statusClass = { upcoming: "ck-tag-green", pending: "ck-tag-gold", archived: "ck-tag-brown" }[event.group];
 
     tags.appendChild(el("span", "ck-tag " + statusClass, statusText));
@@ -1773,6 +1787,7 @@
 
       headBtn.setAttribute("aria-expanded", open ? "true" : "false");
       headBtn.appendChild(el("span", "ck-chevron", "›"));
+      headBtn.appendChild(el("span", Number(entry.checked_in) === 1 ? "ck-status ck-status-left on" : "ck-status ck-status-left", Number(entry.checked_in) === 1 ? "已報到" : "未報到"));
       headBtn.appendChild(el("span", "ck-name", (entry.checkin_number ? entry.checkin_number + "- " : "") + entry.nickname));
 
       if (entry.user_id) {
@@ -1787,7 +1802,7 @@
         headBtn.appendChild(el("span", "ck-tag ck-tag-gold", "選手"));
       }
 
-      headBtn.appendChild(el("span", Number(entry.checked_in) === 1 ? "ck-status on" : "ck-status", Number(entry.checked_in) === 1 ? "已報到" : "未報到"));
+
 
       headBtn.addEventListener("click", function () {
 

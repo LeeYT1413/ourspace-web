@@ -303,7 +303,7 @@ export async function registerPeople(request, env, eventIds, people, registeredB
   for (var j = 0; j < eventIds.length; j++) {
 
     var event = await env.DB.prepare(
-      "SELECT e.id, e.title, e.event_type, e.event_date, e.is_public, e.archived_at, e.capacity, e.reg_deadline, " +
+      "SELECT e.id, e.title, e.event_type, e.event_date, e.start_time, e.is_public, e.archived_at, e.capacity, e.reg_deadline, " +
       "(SELECT COUNT(*) FROM checkin_entries c WHERE c.event_id = e.id) AS total " +
       "FROM checkin_events e WHERE e.id = ?"
     )
@@ -315,6 +315,11 @@ export async function registerPeople(request, env, eventIds, people, registeredB
     }
 
     if (event.reg_deadline && event.reg_deadline.replace("T", " ") < now) {
+      return errorResponse("SIGNUP_CLOSED", 409, { event_id: event.id, title: event.title });
+    }
+
+    /* 比賽開始後就停止報名 */
+    if (event.start_time && event.event_date + " " + event.start_time <= now) {
       return errorResponse("SIGNUP_CLOSED", 409, { event_id: event.id, title: event.title });
     }
 

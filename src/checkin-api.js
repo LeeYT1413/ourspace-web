@@ -594,7 +594,7 @@ async function listEvents(env) {
 
   var result = await env.DB.prepare(
     "SELECT e.id, e.event_date, e.title, e.start_time, e.event_type, e.is_public, e.fee, e.capacity, " +
-    "e.ended_at, e.archived_at, e.settled_at, " +
+    "e.reg_deadline, e.ended_at, e.archived_at, e.settled_at, " +
     "(SELECT COUNT(*) FROM checkin_entries c WHERE c.event_id = e.id) AS total, " +
     "(SELECT COUNT(*) FROM checkin_entries c WHERE c.event_id = e.id AND c.checked_in = 1) AS checked, " +
     "(SELECT COUNT(*) FROM checkin_entries c WHERE c.event_id = e.id AND c.player_id IS NOT NULL) AS linked " +

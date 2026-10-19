@@ -771,11 +771,36 @@
   }
 
 
+  /* 台灣時間，格式 YYYY-MM-DD HH:MM */
+  function taiwanNowText() {
+    var d = new Date(Date.now() + 8 * 3600000);
+    return d.toISOString().slice(0, 16).replace("T", " ");
+  }
+
+  /* 超過報名截止、超過比賽開始時間，就停止報名 */
+  function signupClosed(event) {
+
+    var now = taiwanNowText();
+
+    if (event.archived_at) {
+      return true;
+    }
+
+    if (event.reg_deadline && event.reg_deadline.replace("T", " ") < now) {
+      return true;
+    }
+
+    if (event.start_time && event.event_date + " " + event.start_time <= now) {
+      return true;
+    }
+
+    return event.event_date < now.slice(0, 10);
+  }
+
   function eventStatus(event) {
 
-    var now = state.today;
     var full = event.capacity && event.total >= event.capacity;
-    var closed = event.archived_at || (event.reg_deadline && event.reg_deadline.slice(0, 10) < now);
+    var closed = signupClosed(event);
 
     if (event.event_type !== "big") {
       return { key: "daily", text: "現場報名", open: false };
@@ -1092,7 +1117,7 @@
       h("div", { class: "stats" }, stats.map(function (s) {
         return h("div", { class: "stat stat-" + s[2] }, [h("strong", { text: String(s[1]) }), h("span", { text: s[0] })]);
       })),
-      big && !event.archived_at && (!event.capacity || entries.length < event.capacity) && (!event.reg_deadline || event.reg_deadline.slice(0, 10) >= state.today) ? h("a", { class: "pill pill-red pill-block", href: "#events", onClick: function () { state.selected = [event.id]; }, text: "我要報名" }) : null
+      big && !signupClosed(event) && (!event.capacity || entries.length < event.capacity) ? h("a", { class: "pill pill-red pill-block", href: "#events", onClick: function () { state.selected = [event.id]; }, text: "我要報名" }) : null
     ])]));
 
     /* ---------- 海報 / 詳細資訊（預設收起） ---------- */
@@ -1259,7 +1284,7 @@
 
         clear(app);
         app.appendChild(pageTitle("陀螺爭霸", "TOP SPINNERS"));
-        app.appendChild(h("p", { class: "lead", text: "30 人以上的比賽才算上位。依上位次數排名，同次數比強度（參賽人數加總 ÷ 名次加總），再比最近一次上位的日期。點選手看他最強的三場。" }));
+        app.appendChild(h("p", { class: "lead", text: "在 30 人以上的比賽上位，才計入排行榜" }));
 
         if (!list.length) {
           app.appendChild(stateText("還沒有上位紀錄。"));
@@ -1316,7 +1341,7 @@
             avatar(p.avatar_url, 52),
             h("strong", { class: "serif", text: "第 " + (i + 1) + " 名" }),
             h("strong", { class: "podium-name", text: p.nickname || p.player_name }),
-            h("span", { text: "上位 " + p.upper_count + " 次・強度 " + (p.upper_rate || 0) })
+            h("span", { text: "上位 " + p.upper_count + " 次" })
           ]));
         });
 
@@ -1339,7 +1364,7 @@
             ]),
             h("span", { class: "rank-count" }, [
               h("strong", { text: String(p.upper_count) }),
-              h("span", { text: "強度 " + (p.upper_rate || 0) })
+              h("span", { text: "上位次數" })
             ])
           ]);
 
@@ -1390,7 +1415,7 @@
 
         clear(app);
         app.appendChild(pageTitle("陀螺戰隊", "TEAMS"));
-        app.appendChild(h("p", { class: "lead", text: "在窩室活躍的戰隊。點戰隊看完整介紹。" }));
+        app.appendChild(h("p", { class: "lead", text: "點戰隊看完整介紹" }));
 
         if (!list.length) {
           app.appendChild(stateText("還沒有戰隊資料。"));

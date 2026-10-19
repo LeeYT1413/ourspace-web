@@ -1633,3 +1633,13 @@
 .ck-fee-row .ck-step { width: 34px; height: 34px; }
 .ck-fee-row .ck-stepper strong { min-width: 36px; font-size: 14px; }
 .ck-fee-row .ck-x { width: 34px; height: 34px; flex-basis: 34px; }
+
+/* 報到搜尋結果：已報到／未報到放在左邊 */
+.ck-status-left {
+  flex: 0 0 auto;
+  padding: 0 8px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 22px;
+}
