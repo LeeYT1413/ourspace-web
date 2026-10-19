@@ -49,15 +49,23 @@ export var WEB_PAGE_KEYS = [
   "contact_messages",
   "site_settings",
   "review",
-  "members"
+  "members",
+  "event_delete"
 ];
+
+/* 動作權限：系統管理員一定有，其他角色預設沒有（在 ERP 權限表勾選） */
+var WEB_DEFAULT_OFF = ["event_delete"];
+
+var WEB_DEFAULT_KEYS = WEB_PAGE_KEYS.filter(function (key) {
+  return WEB_DEFAULT_OFF.indexOf(key) === -1;
+});
 
 /* 頁面固定、不看 ERP 設定的角色 */
 var WEB_FIXED_ROLES = { referee: ["referee"] };
 
 var DEFAULT_WEB_PAGES = {
-  admin: WEB_PAGE_KEYS,
-  manager: WEB_PAGE_KEYS,
+  admin: WEB_DEFAULT_KEYS,
+  manager: WEB_DEFAULT_KEYS,
   store_manager: ["events", "checkin", "lottery", "referee", "league_matches", "tournaments", "news"],
   staff: [],
   supplier: []

@@ -835,7 +835,8 @@ async function saveEvent(request, env, staff, id) {
 
 async function deleteEvent(env, staff, id) {
 
-  if (MANAGER_ROLES.indexOf(staff.role) === -1) {
+  /* 刪除場次：系統管理員，或在 ERP 權限表勾了「刪除場次記錄」的角色 */
+  if (!canUsePage(staff, "event_delete")) {
     return errorResponse("FORBIDDEN", 403);
   }
 

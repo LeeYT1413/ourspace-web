@@ -1070,7 +1070,7 @@
     noteBlock.appendChild(field("備註（選填，會顯示在官網）", noteInput));
     wrap.appendChild(noteBlock);
 
-    if (isEdit && isManager()) {
+    if (isEdit && canUse("event_delete")) {
 
       var danger = el("div", "ck-block");
 
