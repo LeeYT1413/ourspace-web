@@ -2513,3 +2513,14 @@ h2 {
   display: block;
 }
 .field[hidden] { display: none; }
+
+/* 頁尾：系統管理員（有填才顯示） */
+.footer-socials {
+  flex-wrap: wrap;
+}
+
+.footer-socials .footer-admin {
+  flex: 1 1 100%;
+  min-height: 40px;
+  font-size: 14px;
+}

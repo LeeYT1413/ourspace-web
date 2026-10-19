@@ -4,8 +4,9 @@
 
    規則
    - 參賽人數 30 人以上的比賽，名次才算上位
-   - 上位率 = 參賽人數 ÷ 名次（32 人拿冠軍 = 32；32 人拿亞軍 = 16）
-   - 排序：上位次數多 → 上位率加總大 → 最近拿到上位的
+   - 每筆上位的比率 = 參賽人數 ÷ 名次（32 人拿冠軍 = 32；32 人拿亞軍 = 16）
+   - 上位率 = 所有比率加總後取平均，只記整數（顯示成 %）
+   - 排序：上位次數多 → 上位率高 → 最近拿到上位的
    - 同一位會員連了多筆選手資料（不同戰隊的暱稱）會合併計算
 
    結果存在 rank_stats，有變動時（封存、認領、連結選手資料、後台修改上位紀錄）
@@ -13,6 +14,9 @@
 ========================================================= */
 
 export var RANK_MIN_PLAYERS = 30;
+
+/* 計算方式改了就換版本號，上線後第一次打開排行榜會自動重算 */
+var RANK_VERSION = "clean-v2";
 
 
 export async function markRankingDirty(env) {
@@ -45,7 +49,7 @@ export async function rebuildRanking(env) {
       "COALESCE(MAX(u.avatar_url), MAX(p.avatar_url)), " +
       "COUNT(pp.id), " +
       "SUM(CASE WHEN pp.placement = 1 THEN 1 ELSE 0 END), " +
-      "SUM(CAST(pp.participant_count AS REAL) / pp.placement), " +
+      "ROUND(AVG(CAST(pp.participant_count AS REAL) / pp.placement)), " +
       "MAX(pp.event_date) " +
       "FROM player_placements pp " +
       "INNER JOIN players p ON p.id = pp.player_id " +
@@ -56,9 +60,9 @@ export async function rebuildRanking(env) {
       "GROUP BY rank_key"
     ).bind(RANK_MIN_PLAYERS),
     env.DB.prepare(
-      "INSERT INTO site_settings (setting_key, setting_value) VALUES ('rank_dirty', '0') " +
-      "ON CONFLICT(setting_key) DO UPDATE SET setting_value = '0'"
-    )
+      "INSERT INTO site_settings (setting_key, setting_value) VALUES ('rank_dirty', ?) " +
+      "ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value"
+    ).bind(RANK_VERSION)
   ]);
 }
 
@@ -67,7 +71,7 @@ export async function ensureRanking(env) {
 
   var flag = await env.DB.prepare("SELECT setting_value FROM site_settings WHERE setting_key = 'rank_dirty'").first();
 
-  if (!flag || flag.setting_value !== "0") {
+  if (!flag || flag.setting_value !== RANK_VERSION) {
     await rebuildRanking(env);
   }
 }
@@ -79,7 +83,7 @@ export async function rankingRows(env, limit) {
 
   var result = await env.DB.prepare(
     "SELECT rank_key, user_id, player_id, display_name AS nickname, team_name, avatar_url, " +
-    "upper_count, first_count, ROUND(upper_rate, 1) AS upper_rate, last_date " +
+    "upper_count, first_count, CAST(upper_rate AS INTEGER) AS upper_rate, last_date " +
     "FROM rank_stats ORDER BY upper_count DESC, upper_rate DESC, last_date DESC, display_name ASC LIMIT ?"
   )
   .bind(limit || 50)

@@ -408,6 +408,11 @@
         text: item[1]
       }));
     });
+
+    /* 系統管理員的聯絡方式：有填才顯示 */
+    if (socials.sysadmin) {
+      box.appendChild(h("a", { class: "pill pill-paper footer-admin", href: socials.sysadmin, target: "_blank", rel: "noopener", text: "系統管理員" }));
+    }
   }
 
 
@@ -1254,7 +1259,7 @@
 
         clear(app);
         app.appendChild(pageTitle("陀螺爭霸", "TOP SPINNERS"));
-        app.appendChild(h("p", { class: "lead", text: "依上位次數排名，同次數比冠軍次數。點選手看他最強的三場。" }));
+        app.appendChild(h("p", { class: "lead", text: "30 人以上的比賽才算上位。依上位次數排名，同次數比上位率（參賽人數 ÷ 名次的平均）。點選手看他最強的三場。" }));
 
         if (!list.length) {
           app.appendChild(stateText("還沒有上位紀錄。"));
@@ -1311,7 +1316,7 @@
             avatar(p.avatar_url, 52),
             h("strong", { class: "serif", text: "第 " + (i + 1) + " 名" }),
             h("strong", { class: "podium-name", text: p.nickname || p.player_name }),
-            h("span", { text: "上位 " + p.upper_count + " 次・上位率 " + (p.upper_rate || 0) })
+            h("span", { text: "上位 " + p.upper_count + " 次・上位率 " + (p.upper_rate || 0) + "%" })
           ]));
         });
 
@@ -1334,7 +1339,7 @@
             ]),
             h("span", { class: "rank-count" }, [
               h("strong", { text: String(p.upper_count) }),
-              h("span", { text: "上位率 " + (p.upper_rate || 0) })
+              h("span", { text: "上位率 " + (p.upper_rate || 0) + "%" })
             ])
           ]);
 
@@ -1586,7 +1591,7 @@
 
       var follow = h("section", { class: "section follow" }, [h("h2", { class: "serif", text: "追蹤我們" })]);
 
-      [["line_official", "LINE 官方帳號", "pill-line"], ["line_group", "LINE 社群", "pill-paper"], ["instagram", "Instagram", "pill-paper"]].forEach(function (item) {
+      [["line_official", "LINE 官方帳號", "pill-line"], ["line_group", "LINE 社群", "pill-paper"], ["instagram", "Instagram", "pill-paper"], ["sysadmin", "聯絡系統管理員", "pill-outline"]].forEach(function (item) {
         if (socials[item[0]]) {
           follow.appendChild(h("a", { class: "pill pill-big pill-block " + item[2], href: socials[item[0]], target: "_blank", rel: "noopener", text: item[1] }));
         }

@@ -3210,11 +3210,13 @@
     var lineOfficial = input("url", data.socials.line_official, { placeholder: "https://lin.ee/…" });
     var lineGroup = input("url", data.socials.line_group, { placeholder: "https://line.me/ti/g2/…" });
     var instagram = input("url", data.socials.instagram, { placeholder: "https://instagram.com/…" });
+    var sysadmin = input("url", data.socials.sysadmin, { placeholder: "https://line.me/ti/p/…" });
 
     social.appendChild(sectionTitle("社群連結", "只接受 https:// 開頭的網址。"));
     social.appendChild(field("LINE 官方帳號", lineOfficial));
     social.appendChild(field("LINE 社群", lineGroup));
     social.appendChild(field("Instagram", instagram));
+    social.appendChild(field("系統管理員", sysadmin, "例如系統管理員的 LINE 連結。有填才會顯示在官網頁尾和關於我們。"));
 
     wrap.appendChild(social);
 
@@ -3344,7 +3346,7 @@
 
       api("PUT", "/site", {
         store: { hours: form.hours, address: address.value, map_url: mapUrl.value },
-        socials: { line_official: lineOfficial.value, line_group: lineGroup.value, instagram: instagram.value },
+        socials: { line_official: lineOfficial.value, line_group: lineGroup.value, instagram: instagram.value, sysadmin: sysadmin.value },
         about: { text: aboutText.value, image_id: form.about_image_id },
         presets: form.presets
       })

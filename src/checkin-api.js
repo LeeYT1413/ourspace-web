@@ -1661,7 +1661,7 @@ async function getSite(env) {
 
   var data = {
     store: await getSetting(env, "store", { hours: [], address: "", map_url: "" }),
-    socials: await getSetting(env, "socials", { line_official: "", line_group: "", instagram: "" }),
+    socials: await getSetting(env, "socials", { line_official: "", line_group: "", instagram: "", sysadmin: "" }),
     about: await getSetting(env, "about", { text: "", image_id: null }),
     presets: await getSetting(env, "presets", { bonus: [], rules: [], special: [], notes: [] })
   };
@@ -1708,7 +1708,8 @@ async function saveSite(request, env, staff) {
   var cleanSocials = {
     line_official: cleanUrl(socials.line_official),
     line_group: cleanUrl(socials.line_group),
-    instagram: cleanUrl(socials.instagram)
+    instagram: cleanUrl(socials.instagram),
+    sysadmin: cleanUrl(socials.sysadmin)
   };
 
   var cleanAbout = {
