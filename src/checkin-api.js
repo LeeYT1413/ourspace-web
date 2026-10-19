@@ -333,7 +333,7 @@ async function handlePublic(request, parts, env) {
       "WHERE c.event_id = ? ORDER BY c.id ASC"
     ).bind(event.id),
     env.DB.prepare(
-      "SELECT rank_label, prize FROM checkin_event_prizes WHERE event_id = ? ORDER BY sort ASC, id ASC"
+      "SELECT prize, qty FROM checkin_event_prizes WHERE event_id = ? ORDER BY sort ASC, id ASC"
     ).bind(event.id)
   ]);
 
@@ -624,7 +624,7 @@ async function getEventDetail(env, id) {
   }
 
   var results = await env.DB.batch([
-    env.DB.prepare("SELECT id, rank_label, prize FROM checkin_event_prizes WHERE event_id = ? ORDER BY sort, id").bind(id),
+    env.DB.prepare("SELECT id, prize, qty FROM checkin_event_prizes WHERE event_id = ? ORDER BY sort, id").bind(id),
     env.DB.prepare("SELECT id, min_players, prize, qty FROM checkin_lottery_tiers WHERE event_id = ? ORDER BY sort, id").bind(id)
   ]);
 
@@ -702,8 +702,9 @@ async function saveEvent(request, env, staff, id) {
   var prizes = cleanList(body.prizes, function (item) {
 
     var prize = cleanText(typeof item === "string" ? item : item && item.prize).slice(0, 100);
+    var qty = toInt(item && item.qty, 1, 999);
 
-    return prize ? { rank_label: "獎品", prize: prize } : null;
+    return prize ? { rank_label: "獎品", prize: prize, qty: qty && !Number.isNaN(qty) ? qty : 1 } : null;
   });
 
   var tiers = [];
@@ -738,7 +739,7 @@ async function saveEvent(request, env, staff, id) {
     startTime || null,
     isPublic,
     note || null,
-    big ? fee : null,
+    fee,
     big ? capacity : null,
     big && deadline ? deadline : null,
     posterId,
@@ -786,8 +787,8 @@ async function saveEvent(request, env, staff, id) {
   prizes.forEach(function (item, index) {
     statements.push(
       env.DB.prepare(
-        "INSERT INTO checkin_event_prizes (event_id, sort, rank_label, prize) VALUES (?, ?, ?, ?)"
-      ).bind(id, index, item.rank_label, item.prize)
+        "INSERT INTO checkin_event_prizes (event_id, sort, rank_label, prize, qty) VALUES (?, ?, ?, ?, ?)"
+      ).bind(id, index, item.rank_label, item.prize, item.qty)
     );
   });
 
@@ -905,7 +906,7 @@ async function settleData(env, event) {
       "INNER JOIN checkin_entries c ON c.id = w.entry_id WHERE w.event_id = ? ORDER BY w.id"
     ).bind(event.id),
     env.DB.prepare(
-      "SELECT rank_label, prize FROM checkin_event_prizes WHERE event_id = ? ORDER BY sort, id"
+      "SELECT prize, qty FROM checkin_event_prizes WHERE event_id = ? ORDER BY sort, id"
     ).bind(event.id),
     env.DB.prepare(
       "SELECT COUNT(*) AS total FROM checkin_entries WHERE event_id = ?"
@@ -934,14 +935,12 @@ async function settleData(env, event) {
   }
 
   var placements = results[1].results || [];
-  var prizeOptions = (results[3].results || []).map(function (item) { return item.prize; }).filter(Boolean);
-
-  /* 還沒存過賽後紀錄：有幾個獎品就排幾個名次，得獎者依名次先後挑選 */
-  if (!placements.length && !event.settled_at) {
-    placements = prizeOptions.map(function (item, index) {
-      return { id: null, rank_label: "第" + (index + 1) + "名", entry_id: null, prize: "" };
-    });
-  }
+  /* 獎品與數量，依新增的順序；上位者由使用者依序新增，每人挑一個還有剩的獎品 */
+  var prizeOptions = (results[3].results || []).filter(function (item) {
+    return item.prize;
+  }).map(function (item) {
+    return { name: item.prize, qty: Number(item.qty) || 1 };
+  });
 
   return {
     event: {

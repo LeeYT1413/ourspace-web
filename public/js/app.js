@@ -1119,7 +1119,7 @@
         if (prizes.length) {
           info.appendChild(h("div", { class: "detail-row" }, [
             h("span", { text: "比賽獎品" }),
-            h("div", {}, prizes.map(function (p) { return h("div", { text: "・" + p.prize }); }))
+            h("div", {}, prizes.map(function (p) { return h("div", { text: "・" + p.prize + (Number(p.qty) > 1 ? " × " + p.qty : "") }); }))
           ]));
         }
 

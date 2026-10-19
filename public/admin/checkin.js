@@ -750,7 +750,7 @@
       poster_image_id: isEdit ? event.poster_image_id : null,
       poster_url: isEdit ? event.poster_url : null,
       prizes: isEdit
-        ? event.prizes.map(function (p) { return { prize: p.prize || "" }; })
+        ? event.prizes.map(function (p) { return { prize: p.prize || "", qty: p.qty || 1 }; })
         : [],
       tiers: isEdit
         ? event.tiers.map(function (t) { return { id: t.id, min_players: t.min_players, prize: t.prize || "", qty: t.qty }; })
@@ -779,7 +779,7 @@
       clear(typeBox);
 
       typeBox.appendChild(el("span", "field-label", "場次類型"));
-      typeBox.appendChild(segmented([["daily", "日常賽"], ["big", "大型賽事"]], form.event_type, function (value) {
+      typeBox.appendChild(segmented([["big", "大型賽事"], ["daily", "日常賽"]], form.event_type, function (value) {
         form.event_type = value;
         drawType();
       }));
@@ -798,7 +798,10 @@
 
     var titleInput = input("text", isEdit ? event.title : "", { maxlength: "50", placeholder: "例如：窩室日常賽" });
     var dateInput = input("date", isEdit ? event.event_date : ck.today);
-    var timeInput = A.timeSelect(isEdit ? event.start_time || "" : "", "未定");
+    /* 新增時預設現在時間往前取整 10 分（例如 20:18 → 20:10） */
+    var nowDate = new Date();
+    var nowTime = pad2(nowDate.getHours()) + ":" + pad2(Math.floor(nowDate.getMinutes() / 10) * 10);
+    var timeInput = A.timeSelect(isEdit ? event.start_time || "" : nowTime, "未定");
     var noteInput = input("text", isEdit ? event.note : "", { maxlength: "200", placeholder: "選填，會顯示在官網" });
     var publicOn = isEdit ? Number(event.is_public) === 1 : true;
 
@@ -825,13 +828,15 @@
     dateRow.appendChild(field("日期", dateInput));
     dateRow.appendChild(field("開始時間（24 小時制）", timeInput));
     basic.appendChild(dateRow);
+    var feeInput = input("number", isEdit ? event.fee : "", { min: "0", inputmode: "numeric" });
+
+    basic.appendChild(field("報名費（元）", feeInput, "賽後紀錄的參賽費用會用這個金額帶入。"));
     basic.appendChild(publicSwitch);
 
     wrap.appendChild(basic);
 
     /* ---------- 大型賽事：線上報名 ---------- */
 
-    var feeInput = input("number", isEdit ? event.fee : "", { min: "0", inputmode: "numeric" });
     var capInput = input("number", isEdit ? event.capacity : "", { min: "1", inputmode: "numeric" });
     var deadlineInput = input("hidden", "");
     var deadlinePicker = A.dateTimePicker(deadlineInput, isEdit ? event.reg_deadline : "");
@@ -839,7 +844,6 @@
     var feeRow = el("div", "ck-row");
 
     bigBlock.appendChild(sectionTitle("線上報名"));
-    feeRow.appendChild(field("報名費（元）", feeInput));
     feeRow.appendChild(field("名額上限", capInput));
     bigBlock.appendChild(feeRow);
     bigBlock.appendChild(field("報名截止（24 小時制）", deadlinePicker));
@@ -950,10 +954,17 @@
         var row = el("div", "ck-inline");
         var prize = input("text", item.prize, { maxlength: "100", placeholder: "獎品名稱", "aria-label": "第 " + (index + 1) + " 個獎品" });
 
+        var qty = input("number", item.qty || 1, { min: "1", inputmode: "numeric", "aria-label": "第 " + (index + 1) + " 個獎品的數量" });
+
+        qty.className = "ck-w-num";
+
         prize.addEventListener("input", function () { item.prize = prize.value; });
+        qty.addEventListener("input", function () { item.qty = Math.max(1, Number(qty.value) || 1); });
 
         row.appendChild(el("span", "ck-inline-label ck-prize-no", String(index + 1)));
         row.appendChild(prize);
+        row.appendChild(el("span", "ck-inline-label", "×"));
+        row.appendChild(qty);
         row.appendChild(removeButton("移除這個獎", function () {
           form.prizes.splice(index, 1);
           drawPrizes();
@@ -965,10 +976,10 @@
 
     drawPrizes();
 
-    prizeBlock.appendChild(sectionTitle("比賽獎品", "列出這次有哪些獎品，每個獎品一份。得獎者依名次先後挑選，賽後紀錄時再記錄誰選了哪個。"));
+    prizeBlock.appendChild(sectionTitle("比賽獎品", "依序列出這次有哪些獎品和數量。賽後紀錄時，依新增上位者的順序記錄每個人挑了哪個獎品。"));
     prizeBlock.appendChild(prizeList);
     prizeBlock.appendChild(button("＋ 新增獎品", "ck-add-row", function () {
-      form.prizes.push({ prize: "" });
+      form.prizes.push({ prize: "", qty: 1 });
       drawPrizes();
     }));
 
@@ -1089,7 +1100,7 @@
         reg_deadline: deadlineInput.value,
         poster_image_id: form.poster_image_id,
         poster_removed: !!form.poster_removed,
-        prizes: form.prizes.map(function (p) { return p.prize; }),
+        prizes: form.prizes.map(function (p) { return { prize: p.prize, qty: p.qty || 1 }; }),
         tiers: form.tiers
       };
 
@@ -1367,25 +1378,39 @@
           }));
         }
 
-        /* 獎品：每個獎品只有一份，別人選走的就不出現 */
+        /* 獎品：依場次設定的順序；被挑完的就不出現 */
         var prize = el("select", "ck-select");
-        var taken = form.placements.filter(function (other) { return other !== item && other.prize; }).map(function (other) { return other.prize; });
-        var options = (data.prize_options || []).filter(function (name) { return taken.indexOf(name) === -1; });
+        var optionsList = data.prize_options || [];
 
-        if (item.prize && options.indexOf(item.prize) === -1) {
-          options.unshift(item.prize);
-        }
-
-        var none = el("option", null, data.prize_options && data.prize_options.length ? "選擇他挑的獎品" : "（這個場次沒有設定獎品）");
+        var none = el("option", null, optionsList.length ? "選擇他挑的獎品" : "（這個場次沒有設定獎品）");
         none.value = "";
         prize.appendChild(none);
 
-        options.forEach(function (name) {
-          var option = el("option", null, name);
-          option.value = name;
-          option.selected = name === item.prize;
+        var listed = false;
+
+        optionsList.forEach(function (opt) {
+
+          var used = form.placements.filter(function (other) { return other !== item && other.prize === opt.name; }).length;
+          var left = opt.qty - used;
+
+          if (left <= 0 && item.prize !== opt.name) {
+            return;
+          }
+
+          var option = el("option", null, opt.name + (opt.qty > 1 ? "（剩 " + Math.max(0, left) + "）" : ""));
+          option.value = opt.name;
+          option.selected = opt.name === item.prize;
+          listed = listed || option.selected;
           prize.appendChild(option);
         });
+
+        /* 舊資料或手動寫的獎品，保留顯示 */
+        if (item.prize && !listed) {
+          var keep = el("option", null, item.prize);
+          keep.value = item.prize;
+          keep.selected = true;
+          prize.appendChild(keep);
+        }
 
         prize.disabled = locked;
         prize.setAttribute("aria-label", item.rank_label + "選的獎品");
@@ -1402,7 +1427,7 @@
 
     drawPlacements();
 
-    placeBlock.appendChild(sectionTitle("上位者與比賽獎品", "依名次記錄得獎者和他挑的獎品（名次前面的先挑，每個獎品一份）。封存時，有綁選手資料的上位者會寫進排行榜。"));
+    placeBlock.appendChild(sectionTitle("上位者與比賽獎品", "依序新增上位者（第 1 位就是第 1 名），再選他挑的獎品；挑完的獎品不會再出現。封存時，有綁選手資料的上位者會寫進排行榜。"));
     placeBlock.appendChild(placeList);
 
     if (!locked) {
