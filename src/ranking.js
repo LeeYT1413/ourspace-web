@@ -4,10 +4,11 @@
 
    規則
    - 參賽人數 30 人以上的比賽，名次才算上位
-   - 每場的上位分數 =（參賽人數 − 名次）÷ 參賽人數 × 100，四捨五入取整數
-     例：32 人拿冠軍 = (32 − 1) ÷ 32 × 100 = 96.9 → 97
-   - 上位率 = 每場分數加總 ÷ 場數，四捨五入取整數（顯示成 %）
-   - 排序：上位次數多 → 上位率高 → 最近拿到上位的
+   - 強度 = 所有上位場次的參賽人數加總 ÷ 名次加總
+     例：32 人冠軍 + 16 人冠軍 = 48 ÷ 2 = 24 分
+         32 人冠軍 + 16 人亞軍 = 48 ÷ 3 = 16 分
+     （存一位小數用來排序，畫面顯示四捨五入的整數；欄位沿用 upper_rate）
+   - 排序：上位次數多 → 強度高 → 最近拿到上位的
    - 同一位會員連了多筆選手資料（不同戰隊的暱稱）會合併計算
 
    結果存在 rank_stats，有變動時（封存、認領、連結選手資料、後台修改上位紀錄）
@@ -17,7 +18,7 @@
 export var RANK_MIN_PLAYERS = 30;
 
 /* 計算方式改了就換版本號，上線後第一次打開排行榜會自動重算 */
-var RANK_VERSION = "clean-v3";
+var RANK_VERSION = "clean-v4";
 
 
 export async function markRankingDirty(env) {
@@ -50,7 +51,7 @@ export async function rebuildRanking(env) {
       "COALESCE(MAX(u.avatar_url), MAX(p.avatar_url)), " +
       "COUNT(pp.id), " +
       "SUM(CASE WHEN pp.placement = 1 THEN 1 ELSE 0 END), " +
-      "ROUND(AVG(ROUND((pp.participant_count - pp.placement) * 100.0 / pp.participant_count))), " +
+      "ROUND(SUM(pp.participant_count) * 1.0 / SUM(pp.placement), 1), " +
       "MAX(pp.event_date) " +
       "FROM player_placements pp " +
       "INNER JOIN players p ON p.id = pp.player_id " +
@@ -84,8 +85,8 @@ export async function rankingRows(env, limit) {
 
   var result = await env.DB.prepare(
     "SELECT rank_key, user_id, player_id, display_name AS nickname, team_name, avatar_url, " +
-    "upper_count, first_count, CAST(upper_rate AS INTEGER) AS upper_rate, last_date " +
-    "FROM rank_stats ORDER BY upper_count DESC, upper_rate DESC, last_date DESC, display_name ASC LIMIT ?"
+    "upper_count, first_count, upper_rate AS strength, CAST(ROUND(upper_rate) AS INTEGER) AS upper_rate, last_date " +
+    "FROM rank_stats ORDER BY upper_count DESC, strength DESC, last_date DESC, display_name ASC LIMIT ?"
   )
   .bind(limit || 50)
   .all();
@@ -94,7 +95,7 @@ export async function rankingRows(env, limit) {
 }
 
 
-/* 最強的三場：上位分數高的在前，再比日期 */
+/* 最強的三場：該場「參賽人數 ÷ 名次」高的在前，再比日期 */
 export async function rankingHighlights(env, key) {
 
   var match = /^([UP])(\d{1,9})$/.exec(String(key || ""));
@@ -115,7 +116,7 @@ export async function rankingHighlights(env, key) {
     "FROM player_placements pp INNER JOIN players p ON p.id = pp.player_id " +
     "LEFT JOIN teams t ON t.id = p.team_id " +
     "WHERE " + where + " AND pp.participant_count >= ? AND pp.placement > 0 " +
-    "ORDER BY (pp.participant_count - pp.placement) * 1.0 / pp.participant_count DESC, pp.event_date DESC LIMIT 3"
+    "ORDER BY pp.participant_count * 1.0 / pp.placement DESC, pp.event_date DESC LIMIT 3"
   )
   .bind(Number(match[2]), RANK_MIN_PLAYERS)
   .all();
