@@ -1259,7 +1259,7 @@
 
         clear(app);
         app.appendChild(pageTitle("陀螺爭霸", "TOP SPINNERS"));
-        app.appendChild(h("p", { class: "lead", text: "30 人以上的比賽才算上位。依上位次數排名，同次數比上位率（參賽人數 ÷ 名次的平均）。點選手看他最強的三場。" }));
+        app.appendChild(h("p", { class: "lead", text: "30 人以上的比賽才算上位。依上位次數排名，同次數比上位率（每場（參賽人數 − 名次）÷ 參賽人數的平均）。點選手看他最強的三場。" }));
 
         if (!list.length) {
           app.appendChild(stateText("還沒有上位紀錄。"));

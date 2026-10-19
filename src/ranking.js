@@ -4,8 +4,9 @@
 
    規則
    - 參賽人數 30 人以上的比賽，名次才算上位
-   - 每筆上位的比率 = 參賽人數 ÷ 名次（32 人拿冠軍 = 32；32 人拿亞軍 = 16）
-   - 上位率 = 所有比率加總後取平均，只記整數（顯示成 %）
+   - 每場的上位分數 =（參賽人數 − 名次）÷ 參賽人數 × 100，四捨五入取整數
+     例：32 人拿冠軍 = (32 − 1) ÷ 32 × 100 = 96.9 → 97
+   - 上位率 = 每場分數加總 ÷ 場數，四捨五入取整數（顯示成 %）
    - 排序：上位次數多 → 上位率高 → 最近拿到上位的
    - 同一位會員連了多筆選手資料（不同戰隊的暱稱）會合併計算
 
@@ -16,7 +17,7 @@
 export var RANK_MIN_PLAYERS = 30;
 
 /* 計算方式改了就換版本號，上線後第一次打開排行榜會自動重算 */
-var RANK_VERSION = "clean-v2";
+var RANK_VERSION = "clean-v3";
 
 
 export async function markRankingDirty(env) {
@@ -49,7 +50,7 @@ export async function rebuildRanking(env) {
       "COALESCE(MAX(u.avatar_url), MAX(p.avatar_url)), " +
       "COUNT(pp.id), " +
       "SUM(CASE WHEN pp.placement = 1 THEN 1 ELSE 0 END), " +
-      "ROUND(AVG(CAST(pp.participant_count AS REAL) / pp.placement)), " +
+      "ROUND(AVG(ROUND((pp.participant_count - pp.placement) * 100.0 / pp.participant_count))), " +
       "MAX(pp.event_date) " +
       "FROM player_placements pp " +
       "INNER JOIN players p ON p.id = pp.player_id " +
@@ -93,7 +94,7 @@ export async function rankingRows(env, limit) {
 }
 
 
-/* 最強的三場：上位率高的在前（參賽人數越多、名次越前面越高），再比日期 */
+/* 最強的三場：上位分數高的在前，再比日期 */
 export async function rankingHighlights(env, key) {
 
   var match = /^([UP])(\d{1,9})$/.exec(String(key || ""));
@@ -114,7 +115,7 @@ export async function rankingHighlights(env, key) {
     "FROM player_placements pp INNER JOIN players p ON p.id = pp.player_id " +
     "LEFT JOIN teams t ON t.id = p.team_id " +
     "WHERE " + where + " AND pp.participant_count >= ? AND pp.placement > 0 " +
-    "ORDER BY CAST(pp.participant_count AS REAL) / pp.placement DESC, pp.event_date DESC LIMIT 3"
+    "ORDER BY (pp.participant_count - pp.placement) * 1.0 / pp.participant_count DESC, pp.event_date DESC LIMIT 3"
   )
   .bind(Number(match[2]), RANK_MIN_PLAYERS)
   .all();
