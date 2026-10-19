@@ -16,6 +16,13 @@
      POST /api/referee/members/:id/status              body: { status: active | disabled }
      POST /api/referee/members/:id/captain             body: { team_id }   設為隊長
 
+   會員的戰隊暱稱 / 選手資料整合（只有系統管理員）
+     GET  /api/referee/members/integration?q=          還沒連到會員的選手資料 + 建議的會員
+     POST /api/referee/members/:id/players/link        body: { player_id }   幫會員認領（不用審核）
+     POST /api/referee/members/:id/players/unlink      body: { player_id }
+     POST /api/referee/members/:id/players/add         body: { team_id, nickname }
+     POST /api/referee/members/:id/players/:pid/nickname   body: { nickname }
+
    完整電話只有系統管理員、管理員看得到，其他人只看末三碼
 ========================================================= */
 
@@ -29,7 +36,13 @@ import {
 } from "./util.js";
 
 import { requireStaff, writeAuditLog, canUsePage, MANAGER_ROLES } from "./auth.js";
-import { syncMemberToErp } from "./member-api.js";
+import { syncMemberToErp, ensurePlayer, validName } from "./member-api.js";
+import { markRankingDirty } from "./ranking.js";
+
+
+function sysadminOnly(staff) {
+  return staff.role === "sysadmin" ? null : errorResponse("FORBIDDEN", 403);
+}
 
 
 function maskPhone(phone) {
@@ -67,6 +80,10 @@ export async function handleMemberAdminApi(request, url, env) {
     return need("review") || review(request, env, staff, parts[0], Number(parts[1]), parts[2] === "approve");
   }
 
+  if (parts[0] === "integration" && method === "GET") {
+    return sysadminOnly(staff) || integration(url, env);
+  }
+
   if (parts[0] === "list" && method === "GET") {
     return need("members") || listMembers(url, env, staff);
   }
@@ -85,6 +102,27 @@ export async function handleMemberAdminApi(request, url, env) {
 
     if (parts[1] === "captain" && method === "POST") {
       return need("members") || setCaptain(request, env, staff, id);
+    }
+
+    if (parts[1] === "players" && method === "POST") {
+
+      var denied = sysadminOnly(staff);
+
+      if (denied) {
+        return denied;
+      }
+
+      if (parts[2] === "link" || parts[2] === "unlink") {
+        return linkPlayer(request, env, staff, id, parts[2] === "link");
+      }
+
+      if (parts[2] === "add") {
+        return addIdentity(request, env, staff, id);
+      }
+
+      if (isPositiveInteger(parts[2]) && parts[3] === "nickname") {
+        return renameIdentity(request, env, staff, id, Number(parts[2]));
+      }
     }
   }
 
@@ -225,6 +263,15 @@ async function review(request, env, staff, kind, id, approve) {
         ).bind(by, now, claim.player_id, id)
       );
 
+      /* 選手資料所屬的戰隊，會員也一起成為隊員 */
+      statements.push(
+        env.DB.prepare(
+          "INSERT INTO member_teams (user_id, team_id, status, approved_at) " +
+          "SELECT ?, team_id, 'active', ? FROM players WHERE id = ? AND team_id IS NOT NULL " +
+          "ON CONFLICT(user_id, team_id) DO UPDATE SET status = 'active', approved_at = excluded.approved_at"
+        ).bind(claim.user_id, now, claim.player_id)
+      );
+
       /* 這位會員以前的報名，名字相同、還沒綁選手的，一起補上 */
       statements.push(
         env.DB.prepare(
@@ -234,6 +281,11 @@ async function review(request, env, staff, kind, id, approve) {
     }
 
     await env.DB.batch(statements);
+
+    if (approve) {
+      await markRankingDirty(env);
+    }
+
     await writeAuditLog(env, staff, approve ? "approve" : "reject", "player_claims", id, null);
 
     return jsonResponse({ success: true });
@@ -357,8 +409,9 @@ async function memberDetail(env, staff, id) {
       "FROM member_teams mt INNER JOIN teams t ON t.id = mt.team_id WHERE mt.user_id = ? ORDER BY mt.id"
     ).bind(id, id),
     env.DB.prepare(
-      "SELECT p.id, COALESCE(NULLIF(p.nickname, ''), p.player_name) AS player_name, t.team_name " +
-      "FROM players p LEFT JOIN teams t ON t.id = p.team_id WHERE p.user_id = ?"
+      "SELECT p.id, COALESCE(NULLIF(p.nickname, ''), p.player_name) AS player_name, p.team_id, t.team_name, " +
+      "(SELECT COUNT(*) FROM player_placements pp WHERE pp.player_id = p.id) AS upper_count " +
+      "FROM players p LEFT JOIN teams t ON t.id = p.team_id WHERE p.user_id = ? ORDER BY t.team_name"
     ).bind(id),
     env.DB.prepare(
       "SELECT " +
@@ -376,6 +429,7 @@ async function memberDetail(env, staff, id) {
   return jsonResponse({
     success: true,
     full_phone: full,
+    can_link: staff.role === "sysadmin",
     data: {
       id: user.id,
       nickname: user.nickname,
@@ -441,9 +495,219 @@ async function setCaptain(request, env, staff, id) {
         env.DB.prepare("UPDATE users SET primary_team_id = ? WHERE id = ? AND primary_team_id IS NULL").bind(teamId, id)
       ]);
 
+  if (!unset) {
+    await ensurePlayer(env, id, teamId);
+  }
+
   await syncMemberToErp(env, id);
 
   await writeAuditLog(env, staff, unset ? "unset_captain" : "set_captain", "teams", teamId, { user_id: id });
 
   return jsonResponse({ success: true });
+}
+
+
+
+/* =========================================================
+   會員的戰隊暱稱、選手資料整合（只有系統管理員）
+========================================================= */
+
+async function linkPlayer(request, env, staff, userId, link) {
+
+  var body = (await parseJsonBody(request)) || {};
+
+  if (!isPositiveInteger(body.player_id)) {
+    return errorResponse("REQUIRED", 400, { field: "player_id" });
+  }
+
+  var playerId = Number(body.player_id);
+
+  if (link) {
+
+    var user = await env.DB.prepare("SELECT id FROM users WHERE id = ?").bind(userId).first();
+
+    if (!user) {
+      return errorResponse("NOT_FOUND", 404);
+    }
+
+    await env.DB.batch([
+      env.DB.prepare("UPDATE players SET user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(userId, playerId),
+      env.DB.prepare(
+        "UPDATE player_claims SET status = 'approved', note = '由店家認領', reviewed_by = ?, reviewed_at = ? " +
+        "WHERE player_id = ? AND user_id = ? AND status = 'pending'"
+      ).bind(staff.display_name || String(staff.id), taiwanNow(), playerId, userId),
+      env.DB.prepare(
+        "UPDATE player_claims SET status = 'rejected', note = '已由其他會員認領', reviewed_by = ?, reviewed_at = ? " +
+        "WHERE player_id = ? AND user_id != ? AND status = 'pending'"
+      ).bind(staff.display_name || String(staff.id), taiwanNow(), playerId, userId),
+      /* 選手資料所屬的戰隊，會員也一起成為隊員 */
+      env.DB.prepare(
+        "INSERT INTO member_teams (user_id, team_id, status, approved_at) " +
+        "SELECT ?, team_id, 'active', ? FROM players WHERE id = ? AND team_id IS NOT NULL " +
+        "ON CONFLICT(user_id, team_id) DO UPDATE SET status = 'active', approved_at = excluded.approved_at"
+      ).bind(userId, taiwanNow(), playerId),
+      env.DB.prepare(
+        "UPDATE users SET primary_team_id = (SELECT team_id FROM players WHERE id = ?) " +
+        "WHERE id = ? AND primary_team_id IS NULL"
+      ).bind(playerId, userId)
+    ]);
+
+    await syncMemberToErp(env, userId);
+
+  } else {
+
+    await env.DB.prepare("UPDATE players SET user_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?")
+      .bind(playerId, userId)
+      .run();
+  }
+
+  await markRankingDirty(env);
+  await writeAuditLog(env, staff, link ? "link_player" : "unlink_player", "players", playerId, { user_id: userId });
+
+  return jsonResponse({ success: true });
+}
+
+
+async function addIdentity(request, env, staff, userId) {
+
+  var body = (await parseJsonBody(request)) || {};
+  var nickname = cleanText(body.nickname);
+
+  if (!isPositiveInteger(body.team_id)) {
+    return errorResponse("REQUIRED", 400, { field: "team_id" });
+  }
+
+  if (!validName(nickname)) {
+    return errorResponse("INVALID_NAME", 400, { field: "nickname" });
+  }
+
+  var teamId = Number(body.team_id);
+
+  var exists = await env.DB.prepare("SELECT id FROM players WHERE user_id = ? AND team_id = ?")
+    .bind(userId, teamId)
+    .first();
+
+  /* 一個戰隊只對應一個暱稱：已經有就改名 */
+  if (exists) {
+    await env.DB.prepare("UPDATE players SET nickname = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+      .bind(nickname, exists.id)
+      .run();
+  } else {
+    await env.DB.prepare("INSERT INTO players (user_id, player_name, nickname, team_id) VALUES (?, ?, ?, ?)")
+      .bind(userId, nickname, nickname, teamId)
+      .run();
+  }
+
+  await env.DB.prepare(
+    "INSERT INTO member_teams (user_id, team_id, status, approved_at) VALUES (?, ?, 'active', ?) " +
+    "ON CONFLICT(user_id, team_id) DO UPDATE SET status = 'active'"
+  )
+  .bind(userId, teamId, taiwanNow())
+  .run();
+
+  await env.DB.prepare("UPDATE users SET primary_team_id = ? WHERE id = ? AND primary_team_id IS NULL")
+    .bind(teamId, userId)
+    .run();
+
+  await markRankingDirty(env);
+  await syncMemberToErp(env, userId);
+  await writeAuditLog(env, staff, "add_identity", "users", userId, { team_id: teamId, nickname: nickname });
+
+  return jsonResponse({ success: true });
+}
+
+
+async function renameIdentity(request, env, staff, userId, playerId) {
+
+  var body = (await parseJsonBody(request)) || {};
+  var nickname = cleanText(body.nickname);
+
+  if (!validName(nickname)) {
+    return errorResponse("INVALID_NAME", 400, { field: "nickname" });
+  }
+
+  await env.DB.prepare("UPDATE players SET nickname = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?")
+    .bind(nickname, playerId, userId)
+    .run();
+
+  await markRankingDirty(env);
+  await writeAuditLog(env, staff, "rename_identity", "players", playerId, { nickname: nickname });
+
+  return jsonResponse({ success: true });
+}
+
+
+/* 還沒連到會員的選手資料，上位次數多的先處理；附上暱稱相同或相近的會員當建議 */
+async function integration(url, env) {
+
+  var keyword = cleanText(url.searchParams.get("q")).slice(0, 30);
+  var like = "%" + keyword.replace(/[\\%_]/g, "\\$&") + "%";
+
+
+  var listStatement = env.DB.prepare(
+    "SELECT p.id, COALESCE(NULLIF(p.nickname, ''), p.player_name) AS player_name, p.player_name AS real_name, " +
+    "t.team_name, (SELECT COUNT(*) FROM player_placements pp WHERE pp.player_id = p.id) AS upper_count " +
+    "FROM players p LEFT JOIN teams t ON t.id = p.team_id " +
+    "WHERE p.status = 'active' AND p.user_id IS NULL " +
+    (keyword ? "AND (p.nickname LIKE ? ESCAPE '\\' OR p.player_name LIKE ? ESCAPE '\\' OR t.team_name LIKE ? ESCAPE '\\') " : "") +
+    "ORDER BY upper_count DESC, player_name ASC LIMIT 40"
+  );
+
+  var batch = await env.DB.batch([
+    env.DB.prepare(
+      "SELECT " +
+      "(SELECT COUNT(*) FROM players WHERE status = 'active') AS total, " +
+      "(SELECT COUNT(*) FROM players WHERE status = 'active' AND user_id IS NOT NULL) AS linked"
+    ),
+    keyword ? listStatement.bind(like, like, like) : listStatement,
+    env.DB.prepare(
+      "SELECT u.id, u.nickname, u.line_name, t.team_name FROM users u " +
+      "LEFT JOIN teams t ON t.id = u.primary_team_id WHERE u.status = 'active' AND u.nickname IS NOT NULL"
+    )
+  ]);
+
+  var counts = (batch[0].results || [])[0] || {};
+  var members = batch[2].results || [];
+
+  function norm(text) {
+    return String(text || "").toLowerCase().replace(/\s+/g, "");
+  }
+
+  var players = (batch[1].results || []).map(function (p) {
+
+    var name = norm(p.player_name);
+    var real = norm(p.real_name);
+
+    /* 建議：暱稱一樣 > 互相包含（例如「黑鳳凰小明」和「小明」） */
+    var suggestions = members.map(function (m) {
+
+      var nick = norm(m.nickname);
+      var score = 0;
+
+      if (nick && (nick === name || nick === real)) {
+        score = 3;
+      } else if (nick.length >= 2 && (name.indexOf(nick) !== -1 || nick.indexOf(name) !== -1)) {
+        score = 2;
+      } else if (m.team_name && p.team_name && m.team_name === p.team_name && nick.length >= 1 && name.indexOf(nick.slice(-1)) !== -1) {
+        score = 1;
+      }
+
+      return { id: m.id, nickname: m.nickname, team_name: m.team_name, score: score };
+    }).filter(function (m) {
+      return m.score >= 2;
+    }).sort(function (a, b) {
+      return b.score - a.score;
+    }).slice(0, 3);
+
+    p.suggestions = suggestions;
+    delete p.real_name;
+    return p;
+  });
+
+  return jsonResponse({
+    success: true,
+    total: counts.total || 0,
+    linked: counts.linked || 0,
+    data: players
+  });
 }

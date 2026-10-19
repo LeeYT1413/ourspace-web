@@ -11,6 +11,7 @@
      PUT  /api/member/profile                   暱稱、電話、主要戰隊
      POST /api/member/logout
      GET  /api/member/search?q=                 找會員（幫別人報名）
+     GET  /api/member/identities                我在各戰隊的暱稱（報名時選用哪一個）
      POST /api/member/register                  報名（自己、幫會員、直接輸入名字）
      GET  /api/member/signups                   我報的名（含幫別人報的）
      DELETE /api/member/signups/:entryId        報到前取消
@@ -398,6 +399,54 @@ async function memberPlayerId(env, userId, primaryTeamId) {
 }
 
 
+/* 會員在某個戰隊的身分（選手資料）：一個戰隊對應一個暱稱；沒有就用會員暱稱建立 */
+export async function ensurePlayer(env, userId, teamId) {
+
+  var existing = await env.DB.prepare("SELECT id FROM players WHERE user_id = ? AND team_id = ? LIMIT 1")
+    .bind(userId, teamId)
+    .first();
+
+  if (existing) {
+    return existing.id;
+  }
+
+  var user = await env.DB.prepare("SELECT nickname FROM users WHERE id = ?").bind(userId).first();
+
+  if (!user || !user.nickname) {
+    return null;
+  }
+
+  var created = await env.DB.prepare(
+    "INSERT INTO players (user_id, player_name, nickname, team_id) VALUES (?, ?, ?, ?)"
+  )
+  .bind(userId, user.nickname, user.nickname, teamId)
+  .run();
+
+  return created.meta.last_row_id;
+}
+
+
+async function myIdentities(env, member) {
+
+  var result = await env.DB.prepare(
+    "SELECT p.id AS player_id, COALESCE(NULLIF(p.nickname, ''), p.player_name) AS nickname, " +
+    "p.team_id, t.team_name FROM players p LEFT JOIN teams t ON t.id = p.team_id " +
+    "WHERE p.user_id = ? AND p.status = 'active' " +
+    "ORDER BY CASE WHEN p.team_id = ? THEN 0 ELSE 1 END, t.team_name"
+  )
+  .bind(member.id, member.primary_team_id || 0)
+  .all();
+
+  return jsonResponse({
+    success: true,
+    data: (result.results || []).map(function (row) {
+      row.is_primary = !!member.primary_team_id && row.team_id === member.primary_team_id;
+      return row;
+    })
+  });
+}
+
+
 /* =========================================================
    入口
 ========================================================= */
@@ -439,6 +488,10 @@ export async function handleMemberApi(request, url, env) {
 
   if (parts[0] === "profile" && method === "PUT") {
     return saveProfile(request, env, member);
+  }
+
+  if (parts[0] === "identities" && method === "GET") {
+    return myIdentities(env, member);
   }
 
   if (parts[0] === "search" && method === "GET") {
@@ -795,10 +848,34 @@ async function memberRegister(request, env, member) {
   }
 
   if (body.self !== false) {
+
+    /* 選用哪個戰隊的暱稱報名（預設主要戰隊） */
+    var identity = null;
+
+    if (isPositiveInteger(body.identity_player_id)) {
+      identity = await env.DB.prepare(
+        "SELECT id, COALESCE(NULLIF(nickname, ''), player_name) AS nickname FROM players " +
+        "WHERE id = ? AND user_id = ? AND status = 'active'"
+      )
+      .bind(Number(body.identity_player_id), member.id)
+      .first();
+    }
+
+    if (!identity) {
+
+      var defaultId = await memberPlayerId(env, member.id, member.primary_team_id);
+
+      if (defaultId) {
+        identity = await env.DB.prepare(
+          "SELECT id, COALESCE(NULLIF(nickname, ''), player_name) AS nickname FROM players WHERE id = ?"
+        ).bind(defaultId).first();
+      }
+    }
+
     add({
-      nickname: member.nickname,
+      nickname: identity ? identity.nickname : member.nickname,
       user_id: member.id,
-      player_id: await memberPlayerId(env, member.id, member.primary_team_id),
+      player_id: identity ? identity.id : null,
       phone: member.phone
     });
   }
@@ -814,10 +891,17 @@ async function memberRegister(request, env, member) {
     .first();
 
     if (other) {
+
+      var otherPlayer = await memberPlayerId(env, other.id, other.primary_team_id);
+      var otherIdentity = otherPlayer
+        ? await env.DB.prepare("SELECT COALESCE(NULLIF(nickname, ''), player_name) AS nickname FROM players WHERE id = ?")
+            .bind(otherPlayer).first()
+        : null;
+
       add({
-        nickname: other.nickname,
+        nickname: otherIdentity ? otherIdentity.nickname : other.nickname,
         user_id: other.id,
-        player_id: await memberPlayerId(env, other.id, other.primary_team_id),
+        player_id: otherPlayer,
         phone: other.phone
       });
     }
@@ -1042,7 +1126,8 @@ async function myTeams(env, member) {
 
   var results = await env.DB.batch([
     env.DB.prepare(
-      "SELECT t.id, t.team_name, t.team_logo_url, t.captain_user_id, mt.status " +
+      "SELECT t.id, t.team_name, t.team_logo_url, t.captain_user_id, mt.status, " +
+      "(SELECT COALESCE(NULLIF(p.nickname, ''), p.player_name) FROM players p WHERE p.user_id = mt.user_id AND p.team_id = t.id LIMIT 1) AS nickname " +
       "FROM member_teams mt INNER JOIN teams t ON t.id = mt.team_id " +
       "WHERE mt.user_id = ? AND t.status = 'active' ORDER BY mt.id"
     ).bind(member.id),
@@ -1077,6 +1162,7 @@ async function myTeams(env, member) {
       id: team.id,
       team_name: team.team_name,
       team_logo_url: team.team_logo_url,
+      nickname: team.nickname,
       status: team.status,
       is_primary: team.id === member.primary_team_id,
       is_captain: captain,
@@ -1107,6 +1193,10 @@ async function joinTeam(env, member, teamId) {
   )
   .bind(member.id, teamId, status, status === "active" ? taiwanNow() : null)
   .run();
+
+  if (status === "active") {
+    await ensurePlayer(env, member.id, teamId);
+  }
 
   return jsonResponse({ success: true });
 }
@@ -1172,6 +1262,9 @@ async function captainAction(env, member, teamId, userId, action) {
     await env.DB.prepare("UPDATE users SET primary_team_id = ? WHERE id = ? AND primary_team_id IS NULL")
       .bind(teamId, userId)
       .run();
+
+    /* 建立他在這個戰隊的暱稱（選手資料） */
+    await ensurePlayer(env, userId, teamId);
 
   } else {
 

@@ -186,3 +186,81 @@
   color: var(--green);
   font-size: 13px;
 }
+
+/* ---------- 戰隊暱稱、選手資料整合 ---------- */
+
+.mm-identities {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px dashed var(--line-bright);
+  border-radius: 14px;
+}
+
+.mm-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 10px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line-bright);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 15px;
+}
+
+.mm-team-name {
+  flex: 0 0 auto;
+  font-weight: 700;
+}
+
+.mm-add-row {
+  display: flex;
+  gap: 6px;
+}
+
+.mm-add-row select {
+  flex: 0 0 120px;
+}
+
+.mm-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mm-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.mm-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.mm-bar span {
+  display: block;
+  height: 100%;
+  background: var(--shu);
+}
+
+.mm-hint {
+  margin: 0 0 10px;
+}
+
+.mm-int {
+  flex-wrap: wrap;
+}
+
+.mm-int-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

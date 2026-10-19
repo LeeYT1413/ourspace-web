@@ -14,6 +14,7 @@ import {
 } from "./util.js";
 
 import { getSessionStaff } from "./auth.js";
+import { rankingRows, rankingHighlights } from "./ranking.js";
 
 
 /* 戰隊聯賽目前不公開，只有登入後台的系統管理員看得到 */
@@ -134,12 +135,34 @@ function listResponse(result, cacheSeconds) {
 
 async function getTeams(env) {
 
-  var result = await env.DB.prepare(
-    "SELECT id, team_name, team_logo_url, description FROM teams " +
-    "WHERE status = 'active' ORDER BY team_name ASC LIMIT 100"
-  ).all();
+  var results = await env.DB.batch([
+    env.DB.prepare(
+      "SELECT id, team_name, team_logo_url, description FROM teams " +
+      "WHERE status = 'active' ORDER BY team_name ASC LIMIT 100"
+    ),
+    /* 戰隊成員：已加入會員、且已經是這個戰隊隊員的人，用他在這個戰隊的暱稱 */
+    env.DB.prepare(
+      "SELECT mt.team_id, COALESCE((SELECT p.nickname FROM players p WHERE p.user_id = u.id AND p.team_id = mt.team_id " +
+      "AND p.nickname IS NOT NULL LIMIT 1), u.nickname) AS nickname, " +
+      "CASE WHEN t.captain_user_id = u.id THEN 1 ELSE 0 END AS is_captain " +
+      "FROM member_teams mt INNER JOIN users u ON u.id = mt.user_id INNER JOIN teams t ON t.id = mt.team_id " +
+      "WHERE mt.status = 'active' AND u.status = 'active' AND u.nickname IS NOT NULL " +
+      "ORDER BY is_captain DESC, nickname ASC"
+    )
+  ]);
 
-  return listResponse(result);
+  var members = results[1].results || [];
+
+  var teams = (results[0].results || []).map(function (team) {
+    team.members = members.filter(function (m) {
+      return m.team_id === team.id;
+    }).map(function (m) {
+      return { nickname: m.nickname, is_captain: m.is_captain };
+    });
+    return team;
+  });
+
+  return jsonResponse({ success: true, data: teams }, 200, API_CACHE_SECONDS);
 
 }
 
@@ -462,7 +485,7 @@ async function getStandings(url, env) {
 /* =========================================================
    RANKING
    陀螺爭霸：依選手的上位紀錄累計
-   排序：上位次數 → 冠軍次數 → 最近上位日期
+   規則與排序在 ranking.js（30 人以上才算上位；上位次數 → 上位率 → 最近上位）
 ========================================================= */
 
 var RANKING_LIMIT = 20;
@@ -470,27 +493,8 @@ var RANKING_LIMIT = 20;
 
 async function getRanking(url, env) {
 
-  var result =
-    await env.DB.prepare(
-      "SELECT " +
-      "p.id AS player_id, p.player_name, p.nickname, p.avatar_url, " +
-      "t.team_name, " +
-      "COUNT(pp.id) AS upper_count, " +
-      "SUM(CASE WHEN pp.placement = 1 THEN 1 ELSE 0 END) AS first_count, " +
-      "MAX(pp.event_date) AS last_date " +
-      "FROM player_placements pp " +
-      "INNER JOIN players p ON pp.player_id = p.id " +
-      "LEFT JOIN teams t ON p.team_id = t.id " +
-      "WHERE p.status = 'active' " +
-      "GROUP BY p.id " +
-      "ORDER BY upper_count DESC, first_count DESC, last_date DESC, p.player_name ASC " +
-      "LIMIT ?"
-    )
-    .bind(RANKING_LIMIT)
-    .all();
-
   return jsonResponse(
-    { success: true, data: result.results || [] },
+    { success: true, data: await rankingRows(env, RANKING_LIMIT) },
     200,
     API_CACHE_SECONDS
   );
@@ -498,54 +502,16 @@ async function getRanking(url, env) {
 }
 
 
-/*
-  選手最厲害的三筆上位紀錄
-  排序：名次越前面越好 → 同名次比參賽人數多 → 比較新的
-*/
-async function getPlayerHighlights(playerId, env) {
+/* 最強的三場（key：U + 會員編號、P + 選手資料編號） */
+async function getPlayerHighlights(key, env) {
 
-  if (!isPositiveInteger(playerId)) {
+  var rows = await rankingHighlights(env, key);
+
+  if (!rows) {
     return errorResponse("INVALID_PLAYER_ID", 400);
   }
 
-  var id = Number(playerId);
-
-  var results = await env.DB.batch([
-
-    env.DB.prepare(
-      "SELECT p.id AS player_id, p.player_name, p.nickname, p.avatar_url, " +
-      "t.team_name, " +
-      "(SELECT COUNT(*) FROM player_placements pp WHERE pp.player_id = p.id) AS upper_count " +
-      "FROM players p " +
-      "LEFT JOIN teams t ON p.team_id = t.id " +
-      "WHERE p.id = ? AND p.status = 'active'"
-    ).bind(id),
-
-    env.DB.prepare(
-      "SELECT event_date, event_name, participant_count, placement " +
-      "FROM player_placements " +
-      "WHERE player_id = ? " +
-      "ORDER BY placement ASC, participant_count DESC, event_date DESC, id DESC " +
-      "LIMIT 3"
-    ).bind(id)
-
-  ]);
-
-  var player = (results[0].results || [])[0];
-
-  if (!player) {
-    return errorResponse("PLAYER_NOT_FOUND", 404);
-  }
-
-  return jsonResponse(
-    {
-      success: true,
-      data: player,
-      highlights: results[1].results || []
-    },
-    200,
-    API_CACHE_SECONDS
-  );
+  return jsonResponse({ success: true, highlights: rows }, 200, API_CACHE_SECONDS);
 
 }
 

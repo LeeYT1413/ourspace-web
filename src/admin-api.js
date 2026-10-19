@@ -20,6 +20,12 @@ import {
   canUsePage
 } from "./auth.js";
 
+import { markRankingDirty } from "./ranking.js";
+
+
+/* 這些資料改了，排行榜要重算 */
+var RANKING_RESOURCES = ["players", "player_placements", "teams"];
+
 
 /* 每個資料表對應的官網後台頁面權限（ERP 系統設定 → 角色權限 → 官網後台） */
 var RESOURCE_PAGES = {
@@ -652,6 +658,10 @@ async function createRecord(request, env, staff, resource, config) {
 
   await writeAuditLog(env, staff, "create", resource, id, collected.values);
 
+  if (RANKING_RESOURCES.indexOf(resource) !== -1) {
+    await markRankingDirty(env);
+  }
+
   return jsonResponse(
     { success: true, data: await getRecord(env, config, id) },
     201
@@ -715,6 +725,10 @@ async function updateRecord(request, env, staff, resource, config, id) {
 
   await writeAuditLog(env, staff, "update", resource, id, collected.values);
 
+  if (RANKING_RESOURCES.indexOf(resource) !== -1) {
+    await markRankingDirty(env);
+  }
+
   return jsonResponse({ success: true, data: await getRecord(env, config, id) });
 
 }
@@ -739,6 +753,10 @@ async function deleteRecord(env, staff, resource, config, id) {
   }
 
   await writeAuditLog(env, staff, "delete", resource, id, existing);
+
+  if (RANKING_RESOURCES.indexOf(resource) !== -1) {
+    await markRankingDirty(env);
+  }
 
   return jsonResponse({ success: true });
 

@@ -1496,3 +1496,140 @@
   color: var(--ink);
   border: 2px solid var(--ink);
 }
+
+
+/* ---------- 報到卡：號碼、裁判、免 ---------- */
+
+.ck-check-row {
+  align-items: flex-end;
+}
+
+.ck-check-row > .field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ck-check-row .ck-number {
+  max-width: 140px;
+}
+
+.ck-check-row .ck-judge {
+  flex: 0 0 auto;
+  min-width: 76px;
+  padding: 0 12px;
+}
+
+.ck-check-row .ck-waive {
+  min-width: 56px;
+  font-family: var(--serif);
+  font-size: 18px;
+}
+
+.ck-waive.on {
+  color: var(--paper);
+  background: #3D6FB6;
+  border-color: #3D6FB6;
+}
+
+
+/* ---------- 比賽獎品序號 ---------- */
+
+.ck-prize-no {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+  background: var(--gold);
+  border-radius: 50%;
+}
+
+
+/* ---------- 抽獎：獎項列、新增獎項、自由抽獎 ---------- */
+
+.ck-tier-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ck-tier-line .ck-tier {
+  flex: 1;
+  min-width: 0;
+}
+
+.ck-tier-add {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 10px;
+  border: 1px dashed var(--line-bright);
+  border-radius: 14px;
+}
+
+.ck-tier-add summary {
+  color: var(--text-soft);
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+  text-align: center;
+}
+
+.ck-tier-add[open] summary {
+  margin-bottom: 8px;
+}
+
+.ck-tier-add input,
+.ck-free-setup input,
+.ck-free-setup textarea,
+.ck-free-setup select {
+  width: 100%;
+  min-height: 46px;
+  padding: 8px 12px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line-bright);
+  border-radius: 12px;
+  font: inherit;
+  font-size: 16px;
+}
+
+.ck-tier-add .ck-inline {
+  margin: 8px 0;
+}
+
+.ck-free-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.ck-free-setup .ck-inline .btn {
+  flex: 0 0 auto;
+  min-height: 46px;
+}
+
+.ck-free-setup .ck-link-danger {
+  align-self: flex-start;
+}
+
+@media (min-width: 1000px) {
+  .ck-free-setup {
+    max-width: 760px;
+  }
+}
+
+/* 參賽費用列：手機上排在同一行 */
+.ck-fee-row .ck-w-rank { flex: 0 0 80px; width: 80px !important; }
+.ck-fee-row .ck-w-price { flex: 0 0 68px; width: 68px !important; }
+.ck-fee-row .ck-step { width: 34px; height: 34px; }
+.ck-fee-row .ck-stepper strong { min-width: 36px; font-size: 14px; }
+.ck-fee-row .ck-x { width: 34px; height: 34px; flex-basis: 34px; }

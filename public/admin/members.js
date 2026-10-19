@@ -279,15 +279,33 @@
      會員管理
   ======================================================= */
 
+  function isSysadmin() {
+    var staff = A.staff();
+    return !!staff && staff.role === "sysadmin";
+  }
+
+
   function renderMembers() {
 
     var main = mm.main;
+
+    if (mm.view === "integration" && isSysadmin()) {
+      renderIntegration();
+      return;
+    }
     var listBox = el("div", "ck-list");
 
     clear(main);
 
     var count = el("span", "ck-head-count");
     main.appendChild(head("會員管理", count));
+
+    if (isSysadmin()) {
+      main.appendChild(segmented([["list", "會員名單"], ["integration", "選手資料整合"]], "list", function (view) {
+        mm.view = view;
+        renderMembers();
+      }));
+    }
 
     var search = el("input", "ck-search");
     search.type = "search";
@@ -398,7 +416,7 @@
       [
         ["手機", m.phone || "—"],
         ["主要戰隊", m.primary_team || "—"],
-        ["選手資料", m.players.length ? m.players.map(function (p) { return p.player_name + (p.team_name ? "・" + p.team_name : ""); }).join("、") : (m.pending_claims ? "審核中 " + m.pending_claims + " 筆" : "—")],
+        ["戰隊暱稱", m.players.length ? m.players.map(function (p) { return (p.team_name || "未加入戰隊") + "・" + p.player_name; }).join("、") : (m.pending_claims ? "認領審核中 " + m.pending_claims + " 筆" : "—")],
         ["最後登入", m.last_login_at || "—"],
         ["狀態", m.status === "active" ? "使用中" : "已停用"]
       ].forEach(function (pair) {
@@ -458,6 +476,11 @@
         });
       }
 
+      /* 系統管理員：戰隊暱稱、幫他認領選手資料 */
+      if (response.can_link) {
+        body.appendChild(identityEditor(m));
+      }
+
       body.appendChild(el("p", "mm-ok", "✓ 已同步到 ERP，店員結帳時可以用暱稱或電話末三碼找到這位會員"));
 
       var foot = el("div", "panel-foot");
@@ -496,6 +519,252 @@
     }).catch(function (error) {
       toast(errorText(error), "error");
     });
+  }
+
+
+  /* =======================================================
+     系統管理員：會員的戰隊暱稱、幫會員認領選手資料
+  ======================================================= */
+
+  function identityEditor(m) {
+
+    var box = el("div", "mm-identities");
+
+    box.appendChild(el("span", "field-label", "戰隊暱稱（一個戰隊對應一個暱稱）"));
+
+    m.players.forEach(function (p) {
+
+      var line = el("div", "mm-team");
+      var name = el("input", "mm-input");
+
+      name.value = p.player_name;
+      name.setAttribute("aria-label", (p.team_name || "未加入戰隊") + "的暱稱");
+
+      line.appendChild(el("span", "mm-team-name", p.team_name || "未加入戰隊"));
+      line.appendChild(name);
+      line.appendChild(el("span", "mm-sub", "上位 " + p.upper_count));
+
+      line.appendChild(button("改名", "btn btn-ghost btn-small", function () {
+        api("POST", "/" + m.id + "/players/" + p.id + "/nickname", { nickname: name.value })
+          .then(function () { toast("已更新暱稱。", "success"); openDetail(m.id); })
+          .catch(function (error) { toast(errorText(error), "error"); });
+      }));
+
+      line.appendChild(button("解除", "btn btn-ghost btn-small", function () {
+        if (!window.confirm("把「" + p.player_name + "」這筆選手資料從會員身上解除？上位紀錄會跟著移出。")) {
+          return;
+        }
+        api("POST", "/" + m.id + "/players/unlink", { player_id: p.id })
+          .then(function () { toast("已解除。", "success"); openDetail(m.id); })
+          .catch(function (error) { toast(errorText(error), "error"); });
+      }));
+
+      box.appendChild(line);
+    });
+
+    /* 新增戰隊暱稱 */
+    var addRow = el("div", "mm-add-row");
+    var teamSelect = el("select", "mm-input");
+    var nick = el("input", "mm-input");
+
+    nick.placeholder = "暱稱";
+    nick.value = m.nickname || "";
+    teamSelect.setAttribute("aria-label", "戰隊");
+    nick.setAttribute("aria-label", "暱稱");
+
+    fetch("/api/teams").then(function (r) { return r.json(); }).then(function (res) {
+      (res.data || []).forEach(function (t) {
+        var option = el("option", null, t.team_name);
+        option.value = String(t.id);
+        teamSelect.appendChild(option);
+      });
+    });
+
+    addRow.appendChild(teamSelect);
+    addRow.appendChild(nick);
+    addRow.appendChild(button("＋ 新增", "btn btn-gold btn-small", function () {
+      api("POST", "/" + m.id + "/players/add", { team_id: teamSelect.value, nickname: nick.value })
+        .then(function () { toast("已新增戰隊暱稱。", "success"); openDetail(m.id); })
+        .catch(function (error) { toast(errorText(error), "error"); });
+    }));
+
+    box.appendChild(addRow);
+
+    /* 幫他認領舊的選手資料 */
+    var search = el("input", "mm-input");
+    var results = el("div", "mm-results");
+    var timer = null;
+
+    search.type = "search";
+    search.placeholder = "搜尋舊的選手資料，幫他認領";
+    search.setAttribute("aria-label", "搜尋選手資料");
+
+    search.addEventListener("input", function () {
+
+      clearTimeout(timer);
+
+      timer = setTimeout(function () {
+
+        if (!search.value.trim()) {
+          clear(results);
+          return;
+        }
+
+        api("GET", "/integration?q=" + encodeURIComponent(search.value.trim()))
+          .then(function (res) {
+
+            clear(results);
+
+            (res.data || []).slice(0, 10).forEach(function (p) {
+
+              var line = el("div", "mm-team");
+
+              line.appendChild(el("strong", "mm-grow", p.player_name + "・" + (p.team_name || "未加入戰隊")));
+              line.appendChild(el("span", "mm-sub", "上位 " + p.upper_count));
+              line.appendChild(button("連到這位會員", "btn btn-primary btn-small", function () {
+                api("POST", "/" + m.id + "/players/link", { player_id: p.id })
+                  .then(function () { toast("已認領：" + p.player_name, "success"); openDetail(m.id); })
+                  .catch(function (error) { toast(errorText(error), "error"); });
+              }));
+
+              results.appendChild(line);
+            });
+
+            if (!results.children.length) {
+              results.appendChild(el("p", "mm-sub", "找不到還沒連到會員的選手資料。"));
+            }
+          });
+      }, 300);
+    });
+
+    box.appendChild(el("span", "field-label", "幫他認領選手資料（不用審核）"));
+    box.appendChild(search);
+    box.appendChild(results);
+
+    return box;
+  }
+
+
+  /* 選手資料整合：還沒連到會員的選手資料，依上位次數排序 */
+  function renderIntegration() {
+
+    var main = mm.main;
+    var list = el("div", "ck-list");
+    var progress = el("div", "mm-progress");
+
+    clear(main);
+    main.appendChild(head("會員管理"));
+    main.appendChild(segmented([["list", "會員名單"], ["integration", "選手資料整合"]], "integration", function (view) {
+      mm.view = view;
+      renderMembers();
+    }));
+
+    main.appendChild(progress);
+
+    var search = el("input", "ck-search");
+    search.type = "search";
+    search.placeholder = "搜尋選手名稱或戰隊";
+    search.setAttribute("aria-label", "搜尋選手資料");
+
+    var timer = null;
+
+    search.addEventListener("input", function () {
+      clearTimeout(timer);
+      timer = setTimeout(load, 300);
+    });
+
+    main.appendChild(el("div", "ck-search-bar")).appendChild(search);
+    main.appendChild(el("p", "mm-sub mm-hint", "每天處理一點就好。按建議的會員就能直接連過去；建議不對，可以用「找其他會員」搜尋。"));
+    main.appendChild(list);
+
+    function link(p, memberId, name) {
+      api("POST", "/" + memberId + "/players/link", { player_id: p.id })
+        .then(function () {
+          toast("已連結：" + p.player_name + " → " + name, "success");
+          load();
+        })
+        .catch(function (error) {
+          toast(errorText(error), "error");
+        });
+    }
+
+    function load() {
+
+      api("GET", "/integration?q=" + encodeURIComponent(search.value.trim()))
+        .then(function (res) {
+
+          clear(progress);
+
+          var pct = res.total ? Math.round(res.linked / res.total * 100) : 0;
+          var bar = el("div", "mm-bar");
+          var fill = el("span");
+
+          fill.style.width = pct + "%";
+          bar.appendChild(fill);
+
+          progress.appendChild(el("strong", null, "已整合 " + res.linked + " / " + res.total + " 筆（" + pct + "%）"));
+          progress.appendChild(bar);
+
+          clear(list);
+
+          if (!(res.data || []).length) {
+            list.appendChild(el("p", "empty", search.value.trim() ? "找不到符合的選手資料。" : "全部都整合完成了！"));
+          }
+
+          (res.data || []).forEach(function (p) {
+
+            var card = el("div", "mm-history mm-int");
+            var info = el("div", "mm-grow");
+
+            info.appendChild(el("strong", null, p.player_name));
+            info.appendChild(el("span", "mm-sub", (p.team_name || "未加入戰隊") + "・上位 " + p.upper_count + " 次"));
+            card.appendChild(info);
+
+            var actions = el("div", "mm-int-actions");
+
+            (p.suggestions || []).forEach(function (s) {
+              actions.appendChild(button("→ " + s.nickname + (s.team_name ? "（" + s.team_name + "）" : ""), "btn btn-gold btn-small", function () {
+                link(p, s.id, s.nickname);
+              }));
+            });
+
+            actions.appendChild(button("找其他會員", "btn btn-ghost btn-small", function () {
+
+              var q = window.prompt("輸入會員暱稱或電話末三碼");
+
+              if (!q) {
+                return;
+              }
+
+              api("GET", "/list?q=" + encodeURIComponent(q))
+                .then(function (r) {
+
+                  var found = (r.data || []).slice(0, 8);
+
+                  if (!found.length) {
+                    toast("找不到會員。", "error");
+                    return;
+                  }
+
+                  var text = found.map(function (m, i) { return (i + 1) + ". " + m.nickname + (m.team_name ? "（" + m.team_name + "）" : ""); }).join("\n");
+                  var pick = Number(window.prompt("要連到哪一位？輸入編號：\n" + text, "1"));
+
+                  if (pick >= 1 && pick <= found.length) {
+                    link(p, found[pick - 1].id, found[pick - 1].nickname);
+                  }
+                });
+            }));
+
+            card.appendChild(actions);
+            list.appendChild(card);
+          });
+        })
+        .catch(function (error) {
+          toast(errorText(error), "error");
+        });
+    }
+
+    load();
   }
 
 

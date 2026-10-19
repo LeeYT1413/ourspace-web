@@ -2457,3 +2457,59 @@ h2 {
     max-width: 480px;
   }
 }
+
+
+/* ---------- 報名名單：你報的 ---------- */
+
+.me-tag.by-me {
+  color: var(--paper);
+  background: #3D6FB6;
+}
+
+.roster-row .x-small {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  font-size: 16px;
+}
+
+
+/* ---------- 陀螺戰隊：成員 ---------- */
+
+.team-members {
+  display: none;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.team-card.open .team-members {
+  display: flex;
+}
+
+.team-members-label {
+  flex: 1 1 100%;
+  color: var(--brown);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.team-member {
+  padding: 2px 10px;
+  color: var(--ink);
+  background: #E3D3B5;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.team-member.captain {
+  color: var(--paper);
+  background: var(--shu);
+}
+
+.list-card .grow strong,
+.list-card .grow .muted {
+  display: block;
+}
+.field[hidden] { display: none; }

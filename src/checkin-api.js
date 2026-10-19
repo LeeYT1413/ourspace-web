@@ -31,6 +31,7 @@ import {
 
 import { requireStaff, writeAuditLog, canUsePage, MANAGER_ROLES } from "./auth.js";
 import { getMember, registerPeople, cleanEventIds, syncEventToErp } from "./member-api.js";
+import { markRankingDirty } from "./ranking.js";
 
 
 var MAX_NAME_LENGTH = 50;
@@ -325,7 +326,7 @@ async function handlePublic(request, parts, env) {
 
   var results = await env.DB.batch([
     env.DB.prepare(
-      "SELECT c.nickname, c.checked_in, c.checkin_number, c.is_judge, c.user_id, t.team_name " +
+      "SELECT c.id, c.nickname, c.checked_in, c.checkin_number, c.is_judge, c.user_id, c.registered_by, t.team_name " +
       "FROM checkin_entries c " +
       "LEFT JOIN players p ON p.id = c.player_id " +
       "LEFT JOIN teams t ON t.id = p.team_id " +
@@ -342,7 +343,12 @@ async function handlePublic(request, parts, env) {
   delete event.poster_link;
   event.entries = (results[0].results || []).map(function (row) {
     row.is_me = !!member && row.user_id === member.id;
+    row.by_me = !!member && !row.is_me && row.registered_by === member.id;
+    /* 自己或自己幫忙報的，報到前可以取消 */
+    row.entry_id = row.is_me || row.by_me ? row.id : null;
+    delete row.id;
     delete row.user_id;
+    delete row.registered_by;
     return row;
   });
   event.prizes = results[1].results || [];
@@ -535,6 +541,10 @@ async function handleStaff(request, url, parts, env) {
       return need("lottery") || lotteryStatus(env, id);
     }
 
+    if (action === "tiers" && !extra && method === "POST") {
+      return need("lottery") || addTier(request, env, staff, id);
+    }
+
     if (action === "lottery" && !extra && method === "POST") {
       return need("lottery") || drawLottery(request, env, staff, id);
     }
@@ -544,6 +554,10 @@ async function handleStaff(request, url, parts, env) {
 
   if (resource === "entries" && !action && method === "DELETE") {
     return need("checkin") || deleteEntry(env, staff, id);
+  }
+
+  if (resource === "tiers" && !action && method === "DELETE") {
+    return need("lottery") || deleteTier(env, staff, id);
   }
 
   if (resource === "lottery" && !action && method === "DELETE") {
@@ -684,12 +698,12 @@ async function saveEvent(request, env, staff, id) {
     return errorResponse("INVALID_DATE", 400, { field: "reg_deadline" });
   }
 
+  /* 比賽獎品：只列有哪些獎品，得獎者依名次先後挑選 */
   var prizes = cleanList(body.prizes, function (item) {
 
-    var label = cleanText(item && item.rank_label).slice(0, 20);
-    var prize = cleanText(item && item.prize).slice(0, 100);
+    var prize = cleanText(typeof item === "string" ? item : item && item.prize).slice(0, 100);
 
-    return label ? { rank_label: label, prize: prize || null } : null;
+    return prize ? { rank_label: "獎品", prize: prize } : null;
   });
 
   var tiers = [];
@@ -879,7 +893,7 @@ async function settleData(env, event) {
 
   var results = await env.DB.batch([
     env.DB.prepare(
-      "SELECT id, nickname, checkin_number, is_judge, player_id FROM checkin_entries " +
+      "SELECT id, nickname, checkin_number, is_judge, fee_waived, player_id FROM checkin_entries " +
       "WHERE event_id = ? AND checked_in = 1 ORDER BY checkin_number ASC, id ASC"
     ).bind(event.id),
     env.DB.prepare(
@@ -907,17 +921,25 @@ async function settleData(env, event) {
     fees = null;
   }
 
+  /* 免報名費優先；同時是裁判又被標「免」的算免報名費 */
+  var waived = checked.filter(function (c) { return Number(c.fee_waived) === 1; }).length;
+  var judges = checked.filter(function (c) { return Number(c.is_judge) === 1 && Number(c.fee_waived) !== 1; }).length;
+
   if (!Array.isArray(fees)) {
-    fees = [{ label: "原價", price: event.fee || 0, count: checked.length }];
+    fees = [
+      { label: "原價", price: event.fee || 0, count: Math.max(0, checked.length - judges - waived) },
+      { label: "裁判優惠", price: 0, count: judges },
+      { label: "免報名費", price: 0, count: waived }
+    ];
   }
 
   var placements = results[1].results || [];
-  var defaults = results[3].results || [];
+  var prizeOptions = (results[3].results || []).map(function (item) { return item.prize; }).filter(Boolean);
 
-  /* 還沒存過賽後紀錄：用場次的預設獎品排出空白名次 */
+  /* 還沒存過賽後紀錄：有幾個獎品就排幾個名次，得獎者依名次先後挑選 */
   if (!placements.length && !event.settled_at) {
-    placements = defaults.map(function (item) {
-      return { id: null, rank_label: item.rank_label, entry_id: null, prize: item.prize };
+    placements = prizeOptions.map(function (item, index) {
+      return { id: null, rank_label: "第" + (index + 1) + "名", entry_id: null, prize: "" };
     });
   }
 
@@ -933,6 +955,9 @@ async function settleData(env, event) {
       settled_at: event.settled_at
     },
     total: ((results[4].results || [])[0] || {}).total || 0,
+    prize_options: prizeOptions,
+    judges: judges,
+    waived: waived,
     checked: checked,
     linked: checked.filter(function (c) { return c.player_id; }).length,
     fees: fees,
@@ -1086,6 +1111,7 @@ async function saveSettle(request, env, staff, id, archive) {
     await env.DB.batch(archiveStatements);
 
     await syncEventToErp(env, id, true);
+    await markRankingDirty(env);
     await writeAuditLog(env, staff, "archive", "checkin_events", id, { checked: checkedCount });
 
   } else {
@@ -1124,6 +1150,7 @@ async function unarchive(env, staff, id) {
   ]);
 
   await syncEventToErp(env, id, false);
+  await markRankingDirty(env);
   await writeAuditLog(env, staff, "unarchive", "checkin_events", id, null);
 
   return jsonResponse({ success: true });
@@ -1137,7 +1164,7 @@ async function unarchive(env, staff, id) {
 
 var ENTRY_SELECT =
   "SELECT c.id, c.event_id, c.nickname, c.player_id, c.checked_in, c.checkin_number, " +
-  "c.is_judge, c.checked_in_at, c.contact_phone, c.source, c.user_id, " +
+  "c.is_judge, c.fee_waived, c.checked_in_at, c.contact_phone, c.source, c.user_id, " +
   "CASE WHEN w.id IS NULL THEN 0 ELSE 1 END AS has_won " +
   "FROM checkin_entries c " +
   "LEFT JOIN (SELECT MIN(id) AS id, entry_id FROM checkin_lottery_wins GROUP BY entry_id) w ON w.entry_id = c.id ";
@@ -1274,6 +1301,7 @@ async function batchUpdate(request, env, staff, eventId) {
     var entryId = Number(item.id);
     var checked = Number(item.checked_in) === 1;
     var judge = checked && Number(item.is_judge) === 1 ? 1 : 0;
+    var waived = checked && Number(item.fee_waived) === 1 ? 1 : 0;
     var number = checked ? toInt(item.checkin_number, 1, 9999) : null;
 
     if (checked && (number === null || Number.isNaN(number))) {
@@ -1294,11 +1322,11 @@ async function batchUpdate(request, env, staff, eventId) {
     updates.push(
       checked
         ? env.DB.prepare(
-            "UPDATE checkin_entries SET checked_in = 1, is_judge = ?, checkin_number = ?, " +
+            "UPDATE checkin_entries SET checked_in = 1, is_judge = ?, fee_waived = ?, checkin_number = ?, " +
             "checked_in_at = COALESCE(checked_in_at, ?) WHERE id = ? AND event_id = ?"
-          ).bind(judge, number, now, entryId, eventId)
+          ).bind(judge, waived, number, now, entryId, eventId)
         : env.DB.prepare(
-            "UPDATE checkin_entries SET checked_in = 0, is_judge = 0, checkin_number = NULL, " +
+            "UPDATE checkin_entries SET checked_in = 0, is_judge = 0, fee_waived = 0, checkin_number = NULL, " +
             "checked_in_at = NULL WHERE id = ? AND event_id = ?"
           ).bind(entryId, eventId)
     );
@@ -1838,4 +1866,71 @@ async function publicRegister(request, env) {
     return { nickname: name, phone: phone || null };
   }), null);
 
+}
+
+
+/* =========================================================
+   抽獎頁直接新增 / 刪除獎項
+========================================================= */
+
+async function addTier(request, env, staff, eventId) {
+
+  var body = (await parseJsonBody(request)) || {};
+  var check = await getOpenEvent(env, eventId);
+
+  if (check.response) {
+    return check.response;
+  }
+
+  var prize = cleanText(body.prize).slice(0, 100);
+  var qty = toInt(body.qty, 1, 999);
+  var min = toInt(body.min_players, 0, 999);
+
+  if (!prize) {
+    return errorResponse("REQUIRED", 400, { field: "prize" });
+  }
+
+  if (Number.isNaN(qty) || Number.isNaN(min)) {
+    return errorResponse("INVALID_NUMBER", 400);
+  }
+
+  await env.DB.prepare(
+    "INSERT INTO checkin_lottery_tiers (event_id, sort, min_players, prize, qty) " +
+    "VALUES (?, (SELECT COALESCE(MAX(sort), -1) + 1 FROM checkin_lottery_tiers WHERE event_id = ?), ?, ?, ?)"
+  )
+  .bind(eventId, eventId, min || 0, prize, qty || 1)
+  .run();
+
+  await writeAuditLog(env, staff, "add_tier", "checkin_events", eventId, { prize: prize });
+
+  return lotteryStatus(env, eventId);
+}
+
+
+async function deleteTier(env, staff, tierId) {
+
+  var tier = await env.DB.prepare(
+    "SELECT t.*, e.archived_at, (SELECT COUNT(*) FROM checkin_lottery_wins w WHERE w.tier_id = t.id) AS drawn " +
+    "FROM checkin_lottery_tiers t INNER JOIN checkin_events e ON e.id = t.event_id WHERE t.id = ?"
+  )
+  .bind(tierId)
+  .first();
+
+  if (!tier) {
+    return errorResponse("TIER_NOT_FOUND", 404);
+  }
+
+  if (tier.archived_at) {
+    return archivedError();
+  }
+
+  /* 已經抽出的中獎紀錄保留，只是不再掛在這個獎項底下 */
+  await env.DB.batch([
+    env.DB.prepare("UPDATE checkin_lottery_wins SET tier_id = NULL WHERE tier_id = ?").bind(tierId),
+    env.DB.prepare("DELETE FROM checkin_lottery_tiers WHERE id = ?").bind(tierId)
+  ]);
+
+  await writeAuditLog(env, staff, "delete_tier", "checkin_events", tier.event_id, { prize: tier.prize });
+
+  return lotteryStatus(env, tier.event_id);
 }

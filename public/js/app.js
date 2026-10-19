@@ -1119,7 +1119,7 @@
         if (prizes.length) {
           info.appendChild(h("div", { class: "detail-row" }, [
             h("span", { text: "比賽獎品" }),
-            h("div", {}, prizes.map(function (p) { return h("div", { text: p.rank_label + "：" + p.prize }); }))
+            h("div", {}, prizes.map(function (p) { return h("div", { text: "・" + p.prize }); }))
           ]));
         }
 
@@ -1185,7 +1185,25 @@
             e.team_name ? h("span", { class: "muted small", text: e.team_name }) : null
           ]),
           e.is_me ? h("span", { class: "me-tag", text: "我" }) : null,
-          h("span", { class: "roster-status" + (on ? " on" : ""), text: on ? "已報到" : "待報到" })
+          e.by_me ? h("span", { class: "me-tag by-me", text: "你報的" }) : null,
+          h("span", { class: "roster-status" + (on ? " on" : ""), text: on ? "已報到" : "待報到" }),
+          e.entry_id && !on ? h("button", {
+            class: "x-btn x-small",
+            type: "button",
+            "aria-label": "取消 " + e.nickname + " 的報名",
+            onClick: function () {
+              if (!window.confirm("取消「" + e.nickname + "」在「" + event.title + "」的報名？")) {
+                return;
+              }
+              memberApi("DELETE", "/signups/" + e.entry_id).then(function () {
+                toast("已取消報名。", "success");
+                renderRoster(event.id);
+              }).catch(function (error) {
+                toast(errorText(error), "error");
+              });
+            },
+            text: "×"
+          }) : null
         ]));
       });
     }
@@ -1250,7 +1268,7 @@
           clear(holder);
           holder.appendChild(stateText("載入中…"));
 
-          api("/api/ranking/" + player.player_id)
+          api("/api/ranking/" + player.rank_key)
             .then(function (res) {
 
               clear(holder);
@@ -1293,7 +1311,7 @@
             avatar(p.avatar_url, 52),
             h("strong", { class: "serif", text: "第 " + (i + 1) + " 名" }),
             h("strong", { class: "podium-name", text: p.nickname || p.player_name }),
-            h("span", { text: "上位 " + p.upper_count + " 次" })
+            h("span", { text: "上位 " + p.upper_count + " 次・上位率 " + (p.upper_rate || 0) })
           ]));
         });
 
@@ -1316,7 +1334,7 @@
             ]),
             h("span", { class: "rank-count" }, [
               h("strong", { text: String(p.upper_count) }),
-              h("span", { text: "冠軍 " + (p.first_count || 0) })
+              h("span", { text: "上位率 " + (p.upper_rate || 0) })
             ])
           ]);
 
@@ -1384,7 +1402,10 @@
               : h("span", { class: "team-logo team-logo-empty", "aria-hidden": "true", text: team.team_name.slice(0, 1) }),
             h("span", { class: "team-text" }, [
               h("strong", { class: "serif", text: team.team_name }),
-              h("span", { class: "team-intro", text: team.description || "這個戰隊還沒有介紹。" })
+              h("span", { class: "team-intro", text: team.description || "這個戰隊還沒有介紹。" }),
+              (team.members || []).length ? h("span", { class: "team-members" }, [h("span", { class: "team-members-label", text: "成員 " + team.members.length + " 人" })].concat(team.members.map(function (m) {
+                return h("span", { class: "team-member" + (Number(m.is_captain) === 1 ? " captain" : ""), text: (Number(m.is_captain) === 1 ? "隊長 " : "") + m.nickname });
+              }))) : null
             ])
           ]);
 
@@ -1741,6 +1762,31 @@
       h("span", { class: "grow" }, [h("strong", { text: "幫自己報名" }), h("span", { class: "muted small", text: "暱稱：" + me.nickname })])
     ]);
 
+    /* 用哪個戰隊的暱稱報名（預設主要戰隊，可以換） */
+    var identity = h("select", { class: "select", "aria-label": "用哪個戰隊的暱稱報名" });
+    var identityBox = h("label", { class: "field", hidden: true }, [h("span", { class: "label", text: "用哪個戰隊和暱稱報名" }), identity]);
+
+    memberApi("GET", "/identities").then(function (res) {
+
+      var list = res.data || [];
+
+      list.forEach(function (it) {
+        var option = h("option", { value: String(it.player_id), text: (it.team_name || "未加入戰隊") + "・" + it.nickname });
+        option.selected = it.is_primary;
+        identity.appendChild(option);
+      });
+
+      if (list.length) {
+        selfBtn.querySelector(".muted").textContent = "暱稱：" + (list.filter(function (it) { return it.is_primary; })[0] || list[0]).nickname;
+      }
+
+      identityBox.hidden = list.length < 2;
+    }).catch(function () {});
+
+    identity.addEventListener("change", function () {
+      selfBtn.querySelector(".muted").textContent = "暱稱：" + identity.options[identity.selectedIndex].text.split("・").slice(1).join("・");
+    });
+
     selfBtn.addEventListener("click", function () {
       self = !self;
       selfBtn.classList.toggle("on", self);
@@ -1864,6 +1910,7 @@
           h("button", { class: "round-btn round-btn-ghost", type: "button", "aria-label": "關閉", onClick: close, text: "×" })
         ]),
         selfBtn,
+        identityBox,
         h("span", { class: "label", text: "幫別人報名（選填）" }),
         modeTabs,
         pickedBox,
@@ -1896,6 +1943,7 @@
       memberApi("POST", "/register", {
         event_ids: state.selected,
         self: self,
+        identity_player_id: identity.value ? Number(identity.value) : null,
         member_ids: picked.map(function (m) { return m.id; }),
         names: names
       })
@@ -2301,7 +2349,10 @@
 
         box.appendChild(h("div", { class: "night-card list-card" }, [
           team.team_logo_url ? h("img", { class: "team-mini", src: team.team_logo_url, alt: "" }) : h("span", { class: "team-mini team-logo-empty", text: team.team_name.slice(0, 1) }),
-          h("strong", { class: "grow", text: team.team_name }),
+          h("span", { class: "grow" }, [
+            h("strong", { text: team.team_name }),
+            team.nickname ? h("span", { class: "muted small", text: "暱稱：" + team.nickname }) : null
+          ]),
           h("span", { class: "tags" }, tags),
           team.status === "active" && !team.is_primary ? h("button", {
             class: "pill pill-ghost",
