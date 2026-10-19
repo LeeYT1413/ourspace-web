@@ -112,7 +112,7 @@ export async function rankingHighlights(env, key) {
   var where = match[1] === "U" ? "p.user_id = ?" : "p.id = ?";
 
   var rows = await env.DB.prepare(
-    "SELECT pp.event_date, pp.event_name, pp.participant_count, pp.placement, t.team_name " +
+    "SELECT pp.event_date, pp.event_name, pp.participant_count, pp.placement, pp.configs, t.team_name " +
     "FROM player_placements pp INNER JOIN players p ON p.id = pp.player_id " +
     "LEFT JOIN teams t ON t.id = p.team_id " +
     "WHERE " + where + " AND pp.participant_count >= ? AND pp.placement > 0 " +

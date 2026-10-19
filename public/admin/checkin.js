@@ -760,7 +760,7 @@
     var isEdit = !!event;
 
     var form = {
-      event_type: isEdit ? event.event_type || "daily" : "daily",
+      event_type: isEdit ? event.event_type || "daily" : "big",
       poster_image_id: isEdit ? event.poster_image_id : null,
       poster_url: isEdit ? event.poster_url : null,
       prizes: isEdit
@@ -1182,7 +1182,7 @@
 
     var form = {
       fees: data.fees.map(function (f) { return { label: f.label, price: f.price, count: f.count }; }),
-      placements: data.placements.map(function (p) { return { rank_label: p.rank_label, entry_id: p.entry_id, prize: p.prize || "" }; }),
+      placements: data.placements.map(function (p) { return { rank_label: p.rank_label, entry_id: p.entry_id, prize: p.prize || "", configs: (p.configs || []).slice() }; }),
       wins: data.wins.map(function (w) { return { id: w.id, prize: w.prize || "", name: (w.checkin_number ? w.checkin_number + "- " : "") + w.nickname }; })
     };
 
@@ -1373,7 +1373,7 @@
         select.appendChild(empty);
 
         data.checked.forEach(function (entry) {
-          var option = el("option", null, (entry.checkin_number ? entry.checkin_number + "- " : "") + entry.nickname + (entry.player_id ? "" : "（未綁選手資料）"));
+          var option = el("option", null, (entry.checkin_number ? entry.checkin_number + "- " : "") + entry.nickname);
           option.value = String(entry.id);
           option.selected = entry.id === item.entry_id;
           select.appendChild(option);
@@ -1435,6 +1435,41 @@
 
         card.appendChild(top);
         card.appendChild(prize);
+
+        /* 配置：可以加好幾個，會跟著存進上位紀錄 */
+        item.configs = item.configs || [];
+
+        var configBox = el("div", "ck-configs");
+
+        item.configs.forEach(function (text, ci) {
+
+          var line = el("div", "ck-inline");
+          var config = input("text", text, { maxlength: "100", placeholder: "例如：陀螺組合、使用的零件", "aria-label": item.rank_label + "的第 " + (ci + 1) + " 個配置" });
+
+          config.disabled = locked;
+          config.addEventListener("input", function () { item.configs[ci] = config.value; });
+
+          line.appendChild(el("span", "ck-inline-label ck-config-label", "配置 " + (ci + 1)));
+          line.appendChild(config);
+
+          if (!locked) {
+            line.appendChild(removeButton("移除這個配置", function () {
+              item.configs.splice(ci, 1);
+              drawPlacements();
+            }));
+          }
+
+          configBox.appendChild(line);
+        });
+
+        if (!locked) {
+          configBox.appendChild(button("＋ 新增配置", "ck-add-row ck-add-config", function () {
+            item.configs.push("");
+            drawPlacements();
+          }));
+        }
+
+        card.appendChild(configBox);
         placeList.appendChild(card);
       });
     }
@@ -1446,7 +1481,7 @@
 
     if (!locked) {
       placeBlock.appendChild(button("＋ 新增上位者", "ck-add-row", function () {
-        form.placements.push({ rank_label: "第" + (form.placements.length + 1) + "名", entry_id: null, prize: "" });
+        form.placements.push({ rank_label: "第" + (form.placements.length + 1) + "名", entry_id: null, prize: "", configs: [] });
         drawPlacements();
       }));
     }

@@ -219,6 +219,16 @@
     return "plain";
   }
 
+  /* 上位紀錄的配置（存成 JSON 陣列） */
+  function configText(value) {
+    try {
+      var list = typeof value === "string" ? JSON.parse(value) : value;
+      return Array.isArray(list) && list.length ? "配置：" + list.join("、") : "";
+    } catch (error) {
+      return "";
+    }
+  }
+
   function placeName(n) {
     return { 1: "冠軍", 2: "亞軍", 3: "季軍" }[n] || "第 " + n + " 名";
   }
@@ -1310,7 +1320,8 @@
                   h("span", { class: "medal medal-" + placeStyle(placeName(row.placement)), text: placeName(row.placement) }),
                   h("div", { class: "grow" }, [
                     h("strong", { text: row.event_name }),
-                    h("span", { class: "muted small", text: dateLabel(row.event_date) + "・" + row.participant_count + " 人參賽" })
+                    h("span", { class: "muted small", text: dateLabel(row.event_date) + "・" + row.participant_count + " 人參賽" }),
+                    configText(row.configs) ? h("span", { class: "config-line", text: configText(row.configs) }) : null
                   ])
                 ]));
               });
@@ -2253,7 +2264,8 @@
           h("span", { class: "medal medal-" + placeStyle(placeName(row.placement)), text: placeName(row.placement) }),
           h("div", { class: "grow" }, [
             h("strong", { text: row.event_name }),
-            h("span", { class: "muted", text: dateLabel(row.event_date) + "・" + row.participant_count + " 人" + (row.team_name ? "・代表 " + row.team_name : "") })
+            h("span", { class: "muted", text: dateLabel(row.event_date) + "・" + row.participant_count + " 人" + (row.team_name ? "・代表 " + row.team_name : "") }),
+            configText(row.configs) ? h("span", { class: "config-line", text: configText(row.configs) }) : null
           ])
         ]));
       });

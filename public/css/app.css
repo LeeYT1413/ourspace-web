@@ -2524,3 +2524,12 @@ h2 {
   min-height: 40px;
   font-size: 14px;
 }
+
+/* 上位紀錄的配置 */
+.config-line {
+  display: block;
+  margin-top: 2px;
+  color: var(--gold-text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}

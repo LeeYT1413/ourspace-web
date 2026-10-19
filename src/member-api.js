@@ -1023,7 +1023,7 @@ async function myPlacements(env, member) {
 
   var results = await env.DB.batch([
     env.DB.prepare(
-      "SELECT pp.event_date, pp.event_name, pp.participant_count, pp.placement, t.team_name " +
+      "SELECT pp.event_date, pp.event_name, pp.participant_count, pp.placement, pp.configs, t.team_name " +
       "FROM player_placements pp INNER JOIN players p ON p.id = pp.player_id " +
       "LEFT JOIN teams t ON t.id = p.team_id " +
       "WHERE p.user_id = ? ORDER BY pp.event_date DESC, pp.id DESC LIMIT 100"

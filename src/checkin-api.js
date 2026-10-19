@@ -898,7 +898,7 @@ async function settleData(env, event) {
       "WHERE event_id = ? AND checked_in = 1 ORDER BY checkin_number ASC, id ASC"
     ).bind(event.id),
     env.DB.prepare(
-      "SELECT r.id, r.rank_label, r.entry_id, r.prize, c.nickname, c.checkin_number FROM checkin_results r " +
+      "SELECT r.id, r.rank_label, r.entry_id, r.prize, r.configs, c.nickname, c.checkin_number FROM checkin_results r " +
       "LEFT JOIN checkin_entries c ON c.id = r.entry_id WHERE r.event_id = ? ORDER BY r.sort, r.id"
     ).bind(event.id),
     env.DB.prepare(
@@ -934,7 +934,14 @@ async function settleData(env, event) {
     ];
   }
 
-  var placements = results[1].results || [];
+  var placements = (results[1].results || []).map(function (row) {
+    try {
+      row.configs = row.configs ? JSON.parse(row.configs) : [];
+    } catch (error) {
+      row.configs = [];
+    }
+    return row;
+  });
   /* 獎品與數量，依新增的順序；上位者由使用者依序新增，每人挑一個還有剩的獎品 */
   var prizeOptions = (results[3].results || []).filter(function (item) {
     return item.prize;
@@ -1030,7 +1037,17 @@ async function saveSettle(request, env, staff, id, archive) {
       entryId = null;
     }
 
-    return { rank_label: label, entry_id: entryId, prize: cleanText(item && item.prize).slice(0, 100) || null };
+    /* 配置：可以多個，每個最多 100 字 */
+    var configs = (Array.isArray(item && item.configs) ? item.configs : []).map(function (text) {
+      return cleanText(text).slice(0, 100);
+    }).filter(Boolean).slice(0, 10);
+
+    return {
+      rank_label: label,
+      entry_id: entryId,
+      prize: cleanText(item && item.prize).slice(0, 100) || null,
+      configs: configs.length ? JSON.stringify(configs) : null
+    };
   });
 
   var winPrizes = cleanList(body.wins, function (item) {
@@ -1052,8 +1069,8 @@ async function saveSettle(request, env, staff, id, archive) {
   placements.forEach(function (item, index) {
     statements.push(
       env.DB.prepare(
-        "INSERT INTO checkin_results (event_id, sort, rank_label, entry_id, prize) VALUES (?, ?, ?, ?, ?)"
-      ).bind(id, index, item.rank_label, item.entry_id, item.prize)
+        "INSERT INTO checkin_results (event_id, sort, rank_label, entry_id, prize, configs) VALUES (?, ?, ?, ?, ?, ?)"
+      ).bind(id, index, item.rank_label, item.entry_id, item.prize, item.configs)
     );
   });
 
@@ -1070,9 +1087,50 @@ async function saveSettle(request, env, staff, id, archive) {
 
     var checkedCount = Object.keys(checkedMap).length;
 
-    /* 有綁官網選手資料、名次是數字的上位者 → 寫進選手上位紀錄（排行榜） */
+    /* 上位者還沒有選手資料的，先找到或建立一筆，上位紀錄才不會漏掉：
+       會員 → 用他主要戰隊的暱稱（沒有就建立一筆）
+       非會員 → 找名字一樣、還沒連到會員的選手資料；找不到就新建（之後可在「選手資料整合」連到會員） */
+    var unresolved = await env.DB.prepare(
+      "SELECT DISTINCT c.id AS entry_id, c.nickname, c.user_id, u.primary_team_id FROM checkin_results r " +
+      "INNER JOIN checkin_entries c ON c.id = r.entry_id " +
+      "LEFT JOIN users u ON u.id = c.user_id " +
+      "WHERE r.event_id = ? AND c.player_id IS NULL"
+    )
+    .bind(id)
+    .all();
+
+    for (var u = 0; u < (unresolved.results || []).length; u++) {
+
+      var person = unresolved.results[u];
+      var found = null;
+
+      if (person.user_id) {
+        found = await env.DB.prepare(
+          "SELECT id FROM players WHERE user_id = ? AND status = 'active' " +
+          "ORDER BY CASE WHEN team_id = ? THEN 0 ELSE 1 END, id LIMIT 1"
+        ).bind(person.user_id, person.primary_team_id || 0).first();
+      } else {
+        found = await env.DB.prepare(
+          "SELECT id FROM players WHERE user_id IS NULL AND status = 'active' AND (nickname = ? OR player_name = ?) " +
+          "ORDER BY id LIMIT 1"
+        ).bind(person.nickname, person.nickname).first();
+      }
+
+      var playerId = found ? found.id : null;
+
+      if (!playerId) {
+        var createdPlayer = await env.DB.prepare(
+          "INSERT INTO players (user_id, player_name, nickname, team_id) VALUES (?, ?, ?, ?)"
+        ).bind(person.user_id || null, person.nickname, person.nickname, person.user_id ? person.primary_team_id || null : null).run();
+        playerId = createdPlayer.meta.last_row_id;
+      }
+
+      await env.DB.prepare("UPDATE checkin_entries SET player_id = ? WHERE id = ?").bind(playerId, person.entry_id).run();
+    }
+
+    /* 名次是數字的上位者 → 寫進選手上位紀錄（排行榜、會員的上位紀錄） */
     var saved = await env.DB.prepare(
-      "SELECT r.id, r.rank_label, c.player_id FROM checkin_results r " +
+      "SELECT r.id, r.rank_label, r.configs, c.player_id FROM checkin_results r " +
       "INNER JOIN checkin_entries c ON c.id = r.entry_id " +
       "WHERE r.event_id = ? AND c.player_id IS NOT NULL"
     )
@@ -1091,9 +1149,9 @@ async function saveSettle(request, env, staff, id, archive) {
 
       archiveStatements.push(
         env.DB.prepare(
-          "INSERT INTO player_placements (player_id, event_date, event_name, participant_count, placement) " +
-          "VALUES (?, ?, ?, ?, ?)"
-        ).bind(row.player_id, event.event_date, event.title, checkedCount, rank)
+          "INSERT INTO player_placements (player_id, event_date, event_name, participant_count, placement, configs) " +
+          "VALUES (?, ?, ?, ?, ?, ?)"
+        ).bind(row.player_id, event.event_date, event.title, checkedCount, rank, row.configs || null)
       );
 
       archiveStatements.push(

@@ -1643,3 +1643,24 @@
   font-size: 12px;
   line-height: 22px;
 }
+
+/* 賽後紀錄：配置 */
+.ck-configs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ck-config-label {
+  flex: 0 0 56px;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.ck-add-config {
+  min-height: 38px;
+  font-size: 14px;
+}
+
+.ck-fee-row .ck-w-rank { flex: 0 0 96px; width: 96px !important; padding-left: 8px; padding-right: 8px; }
+.ck-fee-row .ck-w-price { flex: 0 0 62px; width: 62px !important; padding-left: 8px; padding-right: 8px; }
