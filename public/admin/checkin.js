@@ -258,6 +258,9 @@
     ck.main = main;
     ck.picked = [];
 
+    /* 切換頁面時，報到的搜尋框清空 */
+    ck.searched = "";
+
     if (tabId !== "events") {
       ck.view = "list";
     }
@@ -990,7 +993,7 @@
 
     drawPrizes();
 
-    prizeBlock.appendChild(sectionTitle("比賽獎品", "依序列出這次有哪些獎品和數量。賽後紀錄時，依新增上位者的順序記錄每個人挑了哪個獎品。"));
+    prizeBlock.appendChild(sectionTitle("比賽獎品", "依序列出這次有哪些獎品和數量。賽後紀錄會照這個順序自動帶入名次和獎品，當天可以再改。"));
     prizeBlock.appendChild(prizeList);
     prizeBlock.appendChild(button("＋ 新增獎品", "ck-add-row", function () {
       form.prizes.push({ prize: "", qty: 1 });
@@ -1476,12 +1479,24 @@
 
     drawPlacements();
 
-    placeBlock.appendChild(sectionTitle("上位者與比賽獎品", "依序新增上位者（第 1 位就是第 1 名），再選他挑的獎品；挑完的獎品不會再出現。封存時，有綁選手資料的上位者會寫進排行榜。"));
+    placeBlock.appendChild(sectionTitle("上位者與比賽獎品", "名次和獎品會依場次的獎品設定自動帶入，可以修改；新增上位者時會帶入下一個還有剩的獎品，挑完的獎品不會再出現。封存時，上位者會寫進上位紀錄。"));
     placeBlock.appendChild(placeList);
 
     if (!locked) {
       placeBlock.appendChild(button("＋ 新增上位者", "ck-add-row", function () {
-        form.placements.push({ rank_label: "第" + (form.placements.length + 1) + "名", entry_id: null, prize: "", configs: [] });
+        /* 自動帶入下一個還有剩的獎品（依獎品設定的順序） */
+        var nextPrize = "";
+
+        (data.prize_options || []).some(function (opt) {
+          var used = form.placements.filter(function (other) { return other.prize === opt.name; }).length;
+          if (used < opt.qty) {
+            nextPrize = opt.name;
+            return true;
+          }
+          return false;
+        });
+
+        form.placements.push({ rank_label: "第" + (form.placements.length + 1) + "名", entry_id: null, prize: nextPrize, configs: [] });
         drawPlacements();
       }));
     }
@@ -1583,6 +1598,8 @@
     main.appendChild(eventSelect(renderCheckin));
     main.appendChild(segmented([["checkin", "報到"], ["list", "名單"]], ck.sub, function (sub) {
       ck.sub = sub;
+      ck.searched = "";
+      ck.picked = [];
       renderCheckin();
     }));
 

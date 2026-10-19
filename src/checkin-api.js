@@ -949,6 +949,23 @@ async function settleData(env, event) {
     return { name: item.prize, qty: Number(item.qty) || 1 };
   });
 
+  /* 還沒存過賽後紀錄：依獎品設定的順序和數量，自動排好名次並帶入獎品
+     例：扭蛋 × 2、公仔 × 1 → 第1名 扭蛋、第2名 扭蛋、第3名 公仔（之後可以改） */
+  if (!placements.length && !event.settled_at) {
+
+    prizeOptions.forEach(function (item) {
+      for (var q = 0; q < item.qty && placements.length < 50; q++) {
+        placements.push({
+          id: null,
+          rank_label: "第" + (placements.length + 1) + "名",
+          entry_id: null,
+          prize: item.name,
+          configs: []
+        });
+      }
+    });
+  }
+
   return {
     event: {
       id: event.id,
