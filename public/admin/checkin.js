@@ -993,7 +993,7 @@
 
     drawPrizes();
 
-    prizeBlock.appendChild(sectionTitle("比賽獎品", "依序列出這次有哪些獎品和數量。賽後紀錄會照這個順序自動帶入名次和獎品，當天可以再改。"));
+    prizeBlock.appendChild(sectionTitle("比賽獎品", "照名次順序輸入獎品：第一個給第 1 名、第二個給第 2 名……數量是這個名次拿到幾個（例如扭蛋 × 2）。賽後紀錄會照這個順序自動帶入，當天可以再改。"));
     prizeBlock.appendChild(prizeList);
     prizeBlock.appendChild(button("＋ 新增獎品", "ck-add-row", function () {
       form.prizes.push({ prize: "", qty: 1 });
@@ -1405,18 +1405,29 @@
 
         var listed = false;
 
+        /* 每個獎品給一位上位者；被別人選走的就不出現 */
+        var seenLabels = {};
+
         optionsList.forEach(function (opt) {
 
-          var used = form.placements.filter(function (other) { return other !== item && other.prize === opt.name; }).length;
-          var left = opt.qty - used;
+          var label = opt.label || opt.name;
 
-          if (left <= 0 && item.prize !== opt.name) {
+          if (seenLabels[label]) {
             return;
           }
 
-          var option = el("option", null, opt.name + (opt.qty > 1 ? "（剩 " + Math.max(0, left) + "）" : ""));
-          option.value = opt.name;
-          option.selected = opt.name === item.prize;
+          seenLabels[label] = true;
+
+          var total = optionsList.filter(function (o) { return (o.label || o.name) === label; }).length;
+          var used = form.placements.filter(function (other) { return other !== item && other.prize === label; }).length;
+
+          if (used >= total && item.prize !== label) {
+            return;
+          }
+
+          var option = el("option", null, label);
+          option.value = label;
+          option.selected = label === item.prize;
           listed = listed || option.selected;
           prize.appendChild(option);
         });
@@ -1479,7 +1490,7 @@
 
     drawPlacements();
 
-    placeBlock.appendChild(sectionTitle("上位者與比賽獎品", "名次和獎品會依場次的獎品設定自動帶入，可以修改；新增上位者時會帶入下一個還有剩的獎品，挑完的獎品不會再出現。封存時，上位者會寫進上位紀錄。"));
+    placeBlock.appendChild(sectionTitle("上位者與比賽獎品", "名次和獎品會照場次的獎品順序自動帶入，可以修改；每個獎品給一位上位者，選走的不會再出現。封存時，上位者會寫進上位紀錄。"));
     placeBlock.appendChild(placeList);
 
     if (!locked) {
@@ -1487,12 +1498,16 @@
         /* 自動帶入下一個還有剩的獎品（依獎品設定的順序） */
         var nextPrize = "";
 
+        var claimed = form.placements.map(function (other) { return other.prize; });
+
         (data.prize_options || []).some(function (opt) {
-          var used = form.placements.filter(function (other) { return other.prize === opt.name; }).length;
-          if (used < opt.qty) {
-            nextPrize = opt.name;
+          var label = opt.label || opt.name;
+          var index = claimed.indexOf(label);
+          if (index === -1) {
+            nextPrize = label;
             return true;
           }
+          claimed.splice(index, 1);
           return false;
         });
 

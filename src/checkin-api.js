@@ -943,27 +943,26 @@ async function settleData(env, event) {
     }
     return row;
   });
-  /* 獎品與數量，依新增的順序；上位者由使用者依序新增，每人挑一個還有剩的獎品 */
+  /* 獎品：依輸入的順序，一個獎品給一位上位者；數量是這位上位者拿到幾個
+     例：扭蛋 × 2、公仔 × 1 → 第1名 扭蛋 × 2、第2名 公仔 */
   var prizeOptions = (results[3].results || []).filter(function (item) {
     return item.prize;
   }).map(function (item) {
-    return { name: item.prize, qty: Number(item.qty) || 1 };
+    var qty = Number(item.qty) || 1;
+    return { name: item.prize, qty: qty, label: qty > 1 ? item.prize + " × " + qty : item.prize };
   });
 
-  /* 還沒存過賽後紀錄：依獎品設定的順序和數量，自動排好名次並帶入獎品
-     例：扭蛋 × 2、公仔 × 1 → 第1名 扭蛋、第2名 扭蛋、第3名 公仔（之後可以改） */
+  /* 還沒存過賽後紀錄：照獎品的輸入順序，自動排好名次並帶入獎品（之後可以改） */
   if (!placements.length && !event.settled_at) {
 
-    prizeOptions.forEach(function (item) {
-      for (var q = 0; q < item.qty && placements.length < 50; q++) {
-        placements.push({
-          id: null,
-          rank_label: "第" + (placements.length + 1) + "名",
-          entry_id: null,
-          prize: item.name,
-          configs: []
-        });
-      }
+    prizeOptions.forEach(function (item, index) {
+      placements.push({
+        id: null,
+        rank_label: "第" + (index + 1) + "名",
+        entry_id: null,
+        prize: item.label,
+        configs: []
+      });
     });
   }
 
