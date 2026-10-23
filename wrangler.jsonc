@@ -24,6 +24,11 @@
       "database_name": "ourspace-erp-db",
       "database_id": "cade1a10-97e1-49df-9ce6-bf7b670d1611",
       "remote": true
+    },
+    {
+     "binding": "BRACKET_DB",
+     "database_name": "ourspace-bracket-db",
+     "database_id": "2bc8ddfb-8ed8-4b78-adb4-273b2bcf642e"
     }
   ]
 }
