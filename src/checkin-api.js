@@ -299,9 +299,13 @@ async function handlePublic(request, parts, env) {
     .bind(today)
     .all();
 
+    /* 前台不顯示報名人數、報到人數，只告訴前台是不是額滿 */
     var rows = (list.results || []).map(function (row) {
       row.poster_url = posterOf(row);
+      row.is_full = !!row.capacity && Number(row.total) >= Number(row.capacity);
       delete row.poster_link;
+      delete row.total;
+      delete row.checked;
       return row;
     });
 
@@ -324,26 +328,37 @@ async function handlePublic(request, parts, env) {
     return errorResponse("EVENT_NOT_FOUND", 404);
   }
 
+  var member = await getMember(request, env);
+
+  /* 報名名單只給會員看「自己」和「自己幫忙報的」；沒登入就不給 */
   var results = await env.DB.batch([
     env.DB.prepare(
-      "SELECT c.id, c.nickname, c.checked_in, c.checkin_number, c.is_judge, c.user_id, c.registered_by, t.team_name " +
+      "SELECT c.id, c.nickname, c.checked_in, c.checkin_number, c.is_judge, c.user_id, c.registered_by, " +
+      "rb.nickname AS registered_by_name, t.team_name " +
       "FROM checkin_entries c " +
       "LEFT JOIN players p ON p.id = c.player_id " +
       "LEFT JOIN teams t ON t.id = p.team_id " +
-      "WHERE c.event_id = ? ORDER BY c.id ASC"
-    ).bind(event.id),
+      "LEFT JOIN users rb ON rb.id = c.registered_by " +
+      "WHERE c.event_id = ? AND (c.user_id = ? OR c.registered_by = ?) ORDER BY c.id ASC"
+    ).bind(event.id, member ? member.id : -1, member ? member.id : -1),
+    env.DB.prepare("SELECT COUNT(*) AS total FROM checkin_entries WHERE event_id = ?").bind(event.id),
     env.DB.prepare(
       "SELECT prize, qty FROM checkin_event_prizes WHERE event_id = ? ORDER BY sort ASC, id ASC"
     ).bind(event.id)
   ]);
 
-  var member = await getMember(request, env);
+  var total = ((results[1].results || [])[0] || {}).total || 0;
 
+  event.is_full = !!event.capacity && Number(total) >= Number(event.capacity);
   event.poster_url = posterOf(event);
   delete event.poster_link;
   event.entries = (results[0].results || []).map(function (row) {
     row.is_me = !!member && row.user_id === member.id;
     row.by_me = !!member && !row.is_me && row.registered_by === member.id;
+    /* 朋友幫我報的：顯示是誰幫我報 */
+    if (!row.is_me || row.registered_by === member.id) {
+      row.registered_by_name = null;
+    }
     /* 自己或自己幫忙報的，報到前可以取消 */
     row.entry_id = row.is_me || row.by_me ? row.id : null;
     delete row.id;
@@ -351,7 +366,7 @@ async function handlePublic(request, parts, env) {
     delete row.registered_by;
     return row;
   });
-  event.prizes = results[1].results || [];
+  event.prizes = results[2].results || [];
 
   return jsonResponse({ success: true, data: event }, 200, member ? 0 : LIVE_CACHE_SECONDS);
 
@@ -1104,14 +1119,14 @@ async function saveSettle(request, env, staff, id, archive) {
 
     var checkedCount = Object.keys(checkedMap).length;
 
-    /* 上位者還沒有選手資料的，先找到或建立一筆，上位紀錄才不會漏掉：
-       會員 → 用他主要戰隊的暱稱（沒有就建立一筆）
-       非會員 → 找名字一樣、還沒連到會員的選手資料；找不到就新建（之後可在「選手資料整合」連到會員） */
+    /* 每一位有報到的人都要有選手資料，參賽紀錄和上位紀錄才不會漏掉：
+       會員 → 用他主要戰隊的暱稱（沒有就建立一筆），紀錄算進會員
+       非會員 → 找名字一樣、還沒連到會員的選手資料；找不到就新建一筆到選手頁
+               （之後可在「選手資料整合」連到會員，參賽和上位紀錄會一起合併過去） */
     var unresolved = await env.DB.prepare(
-      "SELECT DISTINCT c.id AS entry_id, c.nickname, c.user_id, u.primary_team_id FROM checkin_results r " +
-      "INNER JOIN checkin_entries c ON c.id = r.entry_id " +
+      "SELECT c.id AS entry_id, c.nickname, c.user_id, u.primary_team_id FROM checkin_entries c " +
       "LEFT JOIN users u ON u.id = c.user_id " +
-      "WHERE r.event_id = ? AND c.player_id IS NULL"
+      "WHERE c.event_id = ? AND c.checked_in = 1 AND c.player_id IS NULL"
     )
     .bind(id)
     .all();
@@ -1147,7 +1162,7 @@ async function saveSettle(request, env, staff, id, archive) {
 
     /* 名次是數字的上位者 → 寫進選手上位紀錄（排行榜、會員的上位紀錄） */
     var saved = await env.DB.prepare(
-      "SELECT r.id, r.rank_label, r.configs, c.player_id FROM checkin_results r " +
+      "SELECT r.id, r.rank_label, r.configs, c.player_id, c.nickname AS entry_name FROM checkin_results r " +
       "INNER JOIN checkin_entries c ON c.id = r.entry_id " +
       "WHERE r.event_id = ? AND c.player_id IS NOT NULL"
     )
@@ -1166,9 +1181,9 @@ async function saveSettle(request, env, staff, id, archive) {
 
       archiveStatements.push(
         env.DB.prepare(
-          "INSERT INTO player_placements (player_id, event_date, event_name, participant_count, placement, configs) " +
-          "VALUES (?, ?, ?, ?, ?, ?)"
-        ).bind(row.player_id, event.event_date, event.title, checkedCount, rank, row.configs || null)
+          "INSERT INTO player_placements (player_id, event_date, event_name, participant_count, placement, configs, entry_name) " +
+          "VALUES (?, ?, ?, ?, ?, ?, ?)"
+        ).bind(row.player_id, event.event_date, event.title, checkedCount, rank, row.configs || null, row.entry_name || null)
       );
 
       archiveStatements.push(

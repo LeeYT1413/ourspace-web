@@ -1,0 +1,62 @@
+/* =========================================================
+   OURSPACE / 窩室
+   後台：廣告管理
+========================================================= */
+
+.ad-preview {
+  display: block;
+  width: 100%;
+  max-height: 160px;
+  object-fit: cover;
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.ad-preview-empty {
+  padding: 24px 12px;
+  color: var(--paper);
+  font-size: 13px;
+  text-align: center;
+}
+
+.ad-url {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+/* 編輯時的浮動廣告預覽（跟官網上的樣子一樣） */
+.ad-float-preview {
+  position: relative;
+  width: min(100%, 420px);
+  margin: 12px auto 4px;
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.ad-mode {
+  margin-bottom: 14px;
+}
+
+.ad-float-preview img {
+  display: block;
+  width: 100%;
+  max-height: 140px;
+  object-fit: cover;
+  border-radius: 14px;
+}
+
+.ad-float-close {
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--paper);
+  background: rgba(15, 26, 46, 0.92);
+  border: 1px solid var(--line-bright);
+  border-radius: 50%;
+  font-size: 16px;
+}

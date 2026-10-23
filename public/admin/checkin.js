@@ -993,7 +993,7 @@
 
     drawPrizes();
 
-    prizeBlock.appendChild(sectionTitle("比賽獎品", "照名次順序輸入獎品：第一個給第 1 名、第二個給第 2 名……數量是這個名次拿到幾個（例如扭蛋 × 2）。賽後紀錄會照這個順序自動帶入，當天可以再改。"));
+    prizeBlock.appendChild(sectionTitle("比賽獎品", "按名次優先選擇獎品"));
     prizeBlock.appendChild(prizeList);
     prizeBlock.appendChild(button("＋ 新增獎品", "ck-add-row", function () {
       form.prizes.push({ prize: "", qty: 1 });

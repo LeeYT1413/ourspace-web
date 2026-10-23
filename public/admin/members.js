@@ -450,6 +450,26 @@
 
           line.appendChild(el("strong", "mm-grow", t.team_name + (t.status === "pending" ? "（等隊長核准）" : "")));
 
+          /* 隊內暱稱：系統管理員可以改（隊長不能改） */
+          if (response.can_link) {
+
+            var teamNick = el("input", "mm-input mm-team-nick");
+
+            teamNick.value = t.nickname || "";
+            teamNick.placeholder = "隊內暱稱";
+            teamNick.setAttribute("aria-label", t.team_name + "的隊內暱稱");
+
+            teamNick.addEventListener("change", function () {
+              api("POST", "/" + m.id + "/teams/" + t.id + "/nickname", { nickname: teamNick.value })
+                .then(function () { toast("已更新隊內暱稱。", "success"); })
+                .catch(function (error) { toast(errorText(error), "error"); });
+            });
+
+            line.appendChild(teamNick);
+          } else if (t.nickname) {
+            line.appendChild(el("span", "mm-sub", "隊內暱稱：" + t.nickname));
+          }
+
           if (Number(t.is_captain) === 1) {
             line.appendChild(el("span", "ck-tag ck-tag-red", "隊長"));
           }
@@ -479,6 +499,7 @@
       /* 系統管理員：戰隊暱稱、幫他認領選手資料 */
       if (response.can_link) {
         body.appendChild(identityEditor(m));
+        body.appendChild(recordsEditor(m));
       }
 
       body.appendChild(el("p", "mm-ok", "✓ 已同步到 ERP，店員結帳時可以用暱稱或電話末三碼找到這位會員"));
@@ -530,7 +551,7 @@
 
     var box = el("div", "mm-identities");
 
-    box.appendChild(el("span", "field-label", "戰隊暱稱（一個戰隊對應一個暱稱）"));
+    box.appendChild(el("span", "field-label", "選手資料（每位會員保留一筆主要的，多的請合併）"));
 
     m.players.forEach(function (p) {
 
@@ -550,6 +571,46 @@
           .catch(function (error) { toast(errorText(error), "error"); });
       }));
 
+      /* 同一個人的兩筆資料：合併到另一筆 */
+      if (m.players.length > 1) {
+
+        var into = el("select", "mm-input mm-merge");
+        var first = el("option", null, "合併到…");
+
+        first.value = "";
+        into.appendChild(first);
+
+        m.players.forEach(function (other) {
+          if (other.id !== p.id) {
+            var option = el("option", null, (other.team_name || "未加入戰隊") + "・" + other.player_name);
+            option.value = String(other.id);
+            into.appendChild(option);
+          }
+        });
+
+        into.setAttribute("aria-label", "把「" + p.player_name + "」合併到另一筆");
+
+        into.addEventListener("change", function () {
+
+          if (!into.value) {
+            return;
+          }
+
+          var label = into.options[into.selectedIndex].text;
+
+          if (!window.confirm("把「" + p.player_name + "」的參賽和上位紀錄合併到「" + label + "」，然後刪除「" + p.player_name + "」這筆資料？\n上位紀錄會保留當時的參賽名稱。")) {
+            into.value = "";
+            return;
+          }
+
+          api("POST", "/" + m.id + "/players/merge", { from_player_id: p.id, into_player_id: Number(into.value) })
+            .then(function () { toast("已合併。", "success"); openDetail(m.id); })
+            .catch(function (error) { toast(errorText(error), "error"); });
+        });
+
+        line.appendChild(into);
+      }
+
       line.appendChild(button("解除", "btn btn-ghost btn-small", function () {
         if (!window.confirm("把「" + p.player_name + "」這筆選手資料從會員身上解除？上位紀錄會跟著移出。")) {
           return;
@@ -562,33 +623,39 @@
       box.appendChild(line);
     });
 
-    /* 新增戰隊暱稱 */
-    var addRow = el("div", "mm-add-row");
+    /* 主要暱稱與戰隊：排行榜顯示這個 */
+    var mainBox = el("div", "mm-add-row");
     var teamSelect = el("select", "mm-input");
     var nick = el("input", "mm-input");
+    var noTeam = el("option", null, "未加入戰隊");
 
-    nick.placeholder = "暱稱";
+    noTeam.value = "";
+    teamSelect.appendChild(noTeam);
+
+    nick.placeholder = "主要暱稱";
     nick.value = m.nickname || "";
-    teamSelect.setAttribute("aria-label", "戰隊");
-    nick.setAttribute("aria-label", "暱稱");
+    teamSelect.setAttribute("aria-label", "主要戰隊");
+    nick.setAttribute("aria-label", "主要暱稱");
 
     fetch("/api/teams").then(function (r) { return r.json(); }).then(function (res) {
       (res.data || []).forEach(function (t) {
         var option = el("option", null, t.team_name);
         option.value = String(t.id);
+        option.selected = t.team_name === m.primary_team;
         teamSelect.appendChild(option);
       });
     });
 
-    addRow.appendChild(teamSelect);
-    addRow.appendChild(nick);
-    addRow.appendChild(button("＋ 新增", "btn btn-gold btn-small", function () {
-      api("POST", "/" + m.id + "/players/add", { team_id: teamSelect.value, nickname: nick.value })
-        .then(function () { toast("已新增戰隊暱稱。", "success"); openDetail(m.id); })
+    mainBox.appendChild(nick);
+    mainBox.appendChild(teamSelect);
+    mainBox.appendChild(button("儲存", "btn btn-gold btn-small", function () {
+      api("POST", "/" + m.id + "/players/main", { nickname: nick.value, team_id: teamSelect.value || null })
+        .then(function () { toast("已更新主要暱稱和戰隊，排行榜會跟著改。", "success"); openDetail(m.id); })
         .catch(function (error) { toast(errorText(error), "error"); });
     }));
 
-    box.appendChild(addRow);
+    box.insertBefore(mainBox, box.firstChild);
+    box.insertBefore(el("span", "field-label", "主要暱稱與戰隊（排行榜顯示這個）"), box.firstChild);
 
     /* 幫他認領舊的選手資料 */
     var search = el("input", "mm-input");
@@ -645,6 +712,173 @@
   }
 
 
+  /* =======================================================
+     系統管理員：手動補登參賽紀錄、上位紀錄
+  ======================================================= */
+
+  function recordsEditor(m) {
+
+    var box = el("div", "mm-identities mm-records");
+    var gamesList = el("div", "mm-results");
+    var placeList = el("div", "mm-results");
+
+    function miniInput(type, placeholder, label) {
+      var node = el("input", "mm-input");
+      node.type = type;
+      node.placeholder = placeholder;
+      node.setAttribute("aria-label", label || placeholder);
+      return node;
+    }
+
+    function today() {
+      var d = new Date(Date.now() + 8 * 3600000);
+      return d.toISOString().slice(0, 10);
+    }
+
+    function draw(res) {
+
+      clear(gamesList);
+      clear(placeList);
+
+      (res.placements || []).forEach(function (p) {
+
+        var line = el("div", "mm-team");
+        var place = { 1: "冠軍", 2: "亞軍", 3: "季軍" }[p.placement] || "第 " + p.placement + " 名";
+
+        line.appendChild(el("span", "mm-grow", p.event_date.replace(/-/g, "/") + "　" + p.event_name + "　" + p.participant_count + " 人・" + place +
+          (p.entry_name ? "・以「" + p.entry_name + "」參賽" : "")));
+        line.appendChild(el("span", "ck-tag " + (p.source === "manual" ? "ck-tag-gold" : "ck-tag-navy"), p.source === "manual" ? "補登" : "報到系統"));
+
+        if (p.source === "manual") {
+          line.appendChild(button("刪除", "btn btn-ghost btn-small", function () {
+            if (!window.confirm("刪除這筆補登的上位紀錄？")) {
+              return;
+            }
+            api("DELETE", "/" + m.id + "/placements/" + p.id).then(draw).catch(function (error) { toast(errorText(error), "error"); });
+          }));
+        }
+
+        placeList.appendChild(line);
+      });
+
+      if (!(res.placements || []).length) {
+        placeList.appendChild(el("p", "mm-sub", "還沒有上位紀錄。"));
+      }
+
+      (res.games || []).forEach(function (g) {
+
+        var line = el("div", "mm-team");
+
+        line.appendChild(el("span", "mm-grow", g.event_date.replace(/-/g, "/") + "　" + g.event_name +
+          (g.participant_count ? "　" + g.participant_count + " 人" : "") + (g.entry_name ? "・以「" + g.entry_name + "」參賽" : "")));
+        line.appendChild(el("span", "ck-tag " + (g.source === "manual" ? "ck-tag-gold" : "ck-tag-navy"), g.source === "manual" ? "補登" : "報到系統"));
+
+        if (g.source === "manual") {
+          line.appendChild(button("刪除", "btn btn-ghost btn-small", function () {
+            if (!window.confirm("刪除這筆補登的參賽紀錄？")) {
+              return;
+            }
+            api("DELETE", "/" + m.id + "/games/" + g.id).then(draw).catch(function (error) { toast(errorText(error), "error"); });
+          }));
+        }
+
+        gamesList.appendChild(line);
+      });
+
+      if (!(res.games || []).length) {
+        gamesList.appendChild(el("p", "mm-sub", "還沒有參賽紀錄。"));
+      }
+    }
+
+    /* 補登上位紀錄 */
+    var pDate = miniInput("date", "日期");
+    var pName = miniInput("text", "比賽名稱");
+    var pTotal = miniInput("number", "人數", "參賽人數");
+    var pRank = miniInput("number", "第幾名", "名次");
+    var pEntry = miniInput("text", "參賽名稱（選填）");
+    var pConfigs = miniInput("text", "配置（選填，多個用、分開）");
+
+    pDate.value = today();
+    pEntry.value = m.nickname || "";
+
+    var pRow1 = el("div", "mm-add-row");
+    var pRow2 = el("div", "mm-add-row");
+    var pRow3 = el("div", "mm-add-row");
+
+    pRow1.appendChild(pDate);
+    pRow1.appendChild(pName);
+    pRow2.appendChild(pTotal);
+    pRow2.appendChild(pRank);
+    pRow2.appendChild(pEntry);
+    pRow3.appendChild(pConfigs);
+    pRow3.appendChild(button("＋ 補登上位", "btn btn-gold btn-small", function () {
+      api("POST", "/" + m.id + "/placements", {
+        event_date: pDate.value,
+        event_name: pName.value,
+        participant_count: pTotal.value,
+        placement: pRank.value,
+        entry_name: pEntry.value,
+        configs: pConfigs.value ? pConfigs.value.split(/[、,，]/) : []
+      })
+        .then(function (res) {
+          toast("已補登上位紀錄（也同時補了一筆參賽紀錄）。", "success");
+          pName.value = "";
+          pTotal.value = "";
+          pRank.value = "";
+          pConfigs.value = "";
+          draw(res);
+        })
+        .catch(function (error) { toast(errorText(error), "error"); });
+    }));
+
+    /* 補登參賽紀錄 */
+    var gDate = miniInput("date", "日期");
+    var gName = miniInput("text", "比賽名稱");
+    var gTotal = miniInput("number", "人數（選填）", "參賽人數");
+    var gEntry = miniInput("text", "參賽名稱（選填）");
+
+    gDate.value = today();
+    gEntry.value = m.nickname || "";
+
+    var gRow1 = el("div", "mm-add-row");
+    var gRow2 = el("div", "mm-add-row");
+
+    gRow1.appendChild(gDate);
+    gRow1.appendChild(gName);
+    gRow2.appendChild(gTotal);
+    gRow2.appendChild(gEntry);
+    gRow2.appendChild(button("＋ 補登參賽", "btn btn-gold btn-small", function () {
+      api("POST", "/" + m.id + "/games", {
+        event_date: gDate.value,
+        event_name: gName.value,
+        participant_count: gTotal.value,
+        entry_name: gEntry.value
+      })
+        .then(function (res) {
+          toast("已補登參賽紀錄。", "success");
+          gName.value = "";
+          gTotal.value = "";
+          draw(res);
+        })
+        .catch(function (error) { toast(errorText(error), "error"); });
+    }));
+
+    box.appendChild(el("span", "field-label", "上位紀錄（補登的可以刪除；報到系統的請用解除封存）"));
+    box.appendChild(placeList);
+    box.appendChild(pRow1);
+    box.appendChild(pRow2);
+    box.appendChild(pRow3);
+    box.appendChild(el("span", "field-label", "參賽紀錄"));
+    box.appendChild(gamesList);
+    box.appendChild(gRow1);
+    box.appendChild(gRow2);
+
+    api("GET", "/" + m.id + "/records").then(draw).catch(function () {});
+
+    return box;
+  }
+
+
   /* 選手資料整合：還沒連到會員的選手資料，依上位次數排序 */
   function renderIntegration() {
 
@@ -660,6 +894,39 @@
     }));
 
     main.appendChild(progress);
+
+    /* 一位會員有多筆選手資料的，可以在這裡合併 */
+    var multiBox = el("div", "mm-multi");
+    main.appendChild(multiBox);
+
+    api("GET", "/multi").then(function (res) {
+
+      var list = res.data || [];
+
+      if (!list.length) {
+        return;
+      }
+
+      var details = el("details", "mm-multi-box");
+      details.appendChild(el("summary", null, "有多筆選手資料的會員（" + list.length + " 位）"));
+
+      list.forEach(function (m) {
+
+        var row = el("div", "mm-history");
+        var info = el("div", "mm-grow");
+
+        info.appendChild(el("strong", null, m.member));
+        info.appendChild(el("span", "mm-sub", m.players.map(function (p) {
+          return (p.team_name || "未加入戰隊") + "・" + p.player_name + "（參賽 " + p.games + "・上位 " + p.upper_count + "）";
+        }).join("、")));
+
+        row.appendChild(info);
+        row.appendChild(button("整理", "btn btn-gold btn-small", function () { openDetail(m.user_id); }));
+        details.appendChild(row);
+      });
+
+      multiBox.appendChild(details);
+    }).catch(function () {});
 
     var search = el("input", "ck-search");
     search.type = "search";
@@ -717,7 +984,7 @@
             var info = el("div", "mm-grow");
 
             info.appendChild(el("strong", null, p.player_name));
-            info.appendChild(el("span", "mm-sub", (p.team_name || "未加入戰隊") + "・上位 " + p.upper_count + " 次"));
+            info.appendChild(el("span", "mm-sub", (p.team_name || "未加入戰隊") + "・參賽 " + (p.games || 0) + " 場・上位 " + p.upper_count + " 次"));
             card.appendChild(info);
 
             var actions = el("div", "mm-int-actions");

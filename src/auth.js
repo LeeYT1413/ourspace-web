@@ -50,6 +50,7 @@ export var WEB_PAGE_KEYS = [
   "site_settings",
   "review",
   "members",
+  "ads",
   "event_delete"
 ];
 

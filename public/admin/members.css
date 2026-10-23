@@ -133,7 +133,12 @@
 .mm-detail {
   display: flex;
   flex-direction: column;
+  flex-wrap: nowrap;
   gap: 12px;
+}
+
+.mm-detail > * {
+  flex-shrink: 0;
 }
 
 .mm-who {
@@ -263,4 +268,45 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.mm-merge {
+  flex: 0 0 110px;
+  font-size: 13px;
+}
+
+.mm-multi-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px dashed var(--line-bright);
+  border-radius: 14px;
+}
+
+.mm-multi-box summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--yellow);
+}
+
+.mm-multi-box[open] summary {
+  margin-bottom: 8px;
+}
+
+.mm-identities .mm-team {
+  flex-wrap: wrap;
+}
+
+.mm-records .mm-add-row {
+  flex-wrap: wrap;
+}
+
+.mm-records .mm-add-row .mm-input {
+  flex: 1 1 120px;
+}
+
+.mm-team-nick {
+  flex: 0 0 120px;
 }

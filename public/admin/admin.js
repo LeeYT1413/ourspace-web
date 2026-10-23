@@ -184,7 +184,9 @@
         { label: "名稱", value: function (r) { return r.player_name; } },
         { label: "暱稱", value: function (r) { return r.nickname || ""; } },
         { label: "戰隊", value: function (r) { return r.team_id ? refLabel("teams", r.team_id) : ""; } },
+        { label: "參賽", value: function (r) { return r.games || 0; } },
         { label: "上位", value: function (r) { return r.upper_count || 0; } },
+        { label: "會員", value: function (r) { return r.member_name || "—"; } },
         { label: "狀態", value: function (r) { return enumLabel("activeStatus", r.status); }, badge: "status" }
       ],
       fields: [
@@ -305,6 +307,7 @@
     { id: "news", label: "公告", group: "網站" },
     { id: "news_images", label: "輪播照片", group: "網站" },
     { id: "contact_messages", label: "聯絡訊息", group: "網站" },
+    { id: "ads", label: "廣告管理", group: "網站" },
     { id: "site_settings", label: "網站設定", group: "網站" }
   ];
 
@@ -329,6 +332,10 @@
   function stopCheckin() {
     if (window.OurSpaceMembers) {
       window.OurSpaceMembers.stop();
+    }
+
+    if (window.OurSpaceAds) {
+      window.OurSpaceAds.stop();
     }
 
     if (window.OurSpaceCheckin) {
@@ -1009,6 +1016,8 @@
 
     if (tabId === "referee") {
       renderRefereeView();
+    } else if (window.OurSpaceAds && window.OurSpaceAds.tabs.indexOf(tabId) !== -1) {
+      window.OurSpaceAds.render(tabId, byId("adminMain"));
     } else if (window.OurSpaceMembers && window.OurSpaceMembers.tabs.indexOf(tabId) !== -1) {
       window.OurSpaceMembers.render(tabId, byId("adminMain"));
     } else if (window.OurSpaceCheckin && window.OurSpaceCheckin.tabs.indexOf(tabId) !== -1) {
@@ -1640,12 +1649,15 @@
     var nameField = miniField("text", "比賽名稱");
     var totalField = miniField("number", "人數");
     var rankField = miniField("number", "第幾名");
+    var entryField = miniField("text", "參賽名稱");
 
     dateField.input.value = localToday();
+    entryField.input.maxLength = 100;
+    entryField.input.value = player.nickname || player.player_name || "";
     nameField.input.maxLength = 100;
     nameField.wrap.classList.add("mini-field-wide");
 
-    [dateField, nameField, totalField, rankField].forEach(function (item) {
+    [dateField, nameField, totalField, rankField, entryField].forEach(function (item) {
 
       addBox.appendChild(item.wrap);
 
@@ -1674,7 +1686,8 @@
       event_date: "日期",
       event_name: "比賽名稱",
       participant_count: "人數",
-      placement: "第幾名"
+      placement: "第幾名",
+      entry_name: "參賽名稱"
     };
 
 
@@ -1713,7 +1726,8 @@
             "span",
             null,
             String(row.event_date).replace(/-/g, "/") + "　" +
-            row.participant_count + " 人　第 " + row.placement + " 名"
+            row.participant_count + " 人　第 " + row.placement + " 名" +
+            (row.entry_name ? "　以「" + row.entry_name + "」參賽" : "")
           )
         );
 
@@ -1756,7 +1770,8 @@
         event_date: dateField.input.value,
         event_name: nameField.input.value,
         participant_count: totalField.input.value,
-        placement: rankField.input.value
+        placement: rankField.input.value,
+        entry_name: entryField.input.value
       })
         .then(function () {
 

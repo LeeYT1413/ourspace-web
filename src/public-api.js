@@ -142,8 +142,7 @@ async function getTeams(env) {
     ),
     /* 戰隊成員：已加入會員、且已經是這個戰隊隊員的人，用他在這個戰隊的暱稱 */
     env.DB.prepare(
-      "SELECT mt.team_id, COALESCE((SELECT p.nickname FROM players p WHERE p.user_id = u.id AND p.team_id = mt.team_id " +
-      "AND p.nickname IS NOT NULL LIMIT 1), u.nickname) AS nickname, " +
+      "SELECT mt.team_id, COALESCE(NULLIF(mt.nickname, ''), u.nickname) AS nickname, " +
       "CASE WHEN t.captain_user_id = u.id THEN 1 ELSE 0 END AS is_captain " +
       "FROM member_teams mt INNER JOIN users u ON u.id = mt.user_id INNER JOIN teams t ON t.id = mt.team_id " +
       "WHERE mt.status = 'active' AND u.status = 'active' AND u.nickname IS NOT NULL " +

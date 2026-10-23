@@ -2533,3 +2533,486 @@ h2 {
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+
+.entry-name {
+  display: block;
+}
+
+.link-btn {
+  padding: 0;
+  color: var(--gold-text);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+
+/* =========================================================
+   浮動廣告（貼在畫面下緣、置中）
+========================================================= */
+
+.ad-float {
+  position: fixed;
+  left: 50%;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  z-index: 45;
+
+  width: min(92vw, 420px);
+
+  transform: translateX(-50%);
+
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+/* 賽事名單有底部報名列時，廣告往上移 */
+.has-bottom-bar .ad-float {
+  bottom: calc(150px + env(safe-area-inset-bottom, 0px));
+}
+
+.ad-link {
+  display: block;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--night-2);
+}
+
+.ad-link img {
+  display: block;
+  width: 100%;
+  max-height: 140px;
+  object-fit: cover;
+}
+
+/* 手機版：廣告縮小成橫幅 */
+@media (max-width: 899px) {
+
+  .ad-float {
+    width: min(84vw, 340px);
+    border-radius: 10px;
+  }
+
+  .ad-link {
+    border-radius: 10px;
+  }
+
+  .ad-link img {
+    max-height: 72px;
+  }
+
+  .has-bottom-bar .ad-float {
+    bottom: calc(146px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .has-ad .site-footer {
+    padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .ad-close {
+    top: -9px;
+    left: -9px;
+    width: 26px;
+    height: 26px;
+    font-size: 15px;
+  }
+}
+
+.ad-close {
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  z-index: 1;
+
+  width: 28px;
+  height: 28px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  color: var(--paper);
+  background: rgba(15, 26, 46, 0.92);
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  cursor: pointer;
+
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* 廣告不要蓋住頁尾內容 */
+.has-ad .site-footer {
+  padding-bottom: calc(170px + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 900px) {
+  .has-bottom-bar .ad-float {
+    bottom: calc(100px + env(safe-area-inset-bottom, 0px));
+  }
+}
+.ad-float[hidden] { display: none; }
+
+/* 賽事名單：整張卡片可以點 */
+.event-card.is-clickable {
+  cursor: pointer;
+}
+
+.event-card.is-clickable:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.login-hint-flat {
+  margin: 0;
+}
+
+
+/* =========================================================
+   比賽賽程
+========================================================= */
+
+.not-open {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 18px;
+  text-align: center;
+  background: var(--night-2);
+  border: 1px dashed var(--line-strong);
+  border-radius: 18px;
+}
+
+.not-open strong {
+  font-size: 26px;
+  letter-spacing: 6px;
+}
+
+.not-open span {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.bracket-count {
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.warn-box {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--shu);
+  border-radius: 12px;
+  background: rgba(194, 58, 46, 0.18);
+  font-size: 14px;
+}
+
+.bracket-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tag-note {
+  margin-left: auto;
+  color: var(--brown);
+  font-size: 12px;
+}
+
+.tag-draft { background: #3D4F6E; }
+
+.pill-danger-outline {
+  color: var(--shu-dark);
+  background: transparent;
+  border: 2px solid var(--shu-dark);
+}
+
+.pill-gold-solid {
+  min-height: 38px;
+  color: var(--night);
+  background: var(--gold);
+}
+
+.pill-chip {
+  min-height: 38px;
+}
+
+.date-row {
+  position: relative;
+  display: flex;
+  gap: 6px;
+}
+
+.date-row input[type="text"] {
+  flex: 1;
+}
+
+.cal-btn {
+  width: 50px;
+  flex: 0 0 50px;
+  color: var(--gold-text);
+  background: var(--night-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 20px;
+}
+
+.date-hidden {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.player-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.player-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 10px;
+  background: var(--night-2);
+  border-radius: 10px;
+}
+
+.form textarea {
+  padding: 10px 14px;
+  resize: vertical;
+}
+
+.pick-chip-pink {
+  background: var(--pink);
+}
+
+.center-text {
+  text-align: center;
+}
+
+/* ----- 對戰表 ----- */
+
+.bracket-head {
+  position: relative;
+  overflow: hidden;
+  padding-top: 12px;
+}
+
+.bracket-head > * {
+  position: relative;
+}
+
+.bracket-sun {
+  position: absolute !important;
+  right: -50px;
+  top: -20px;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  background: var(--shu);
+  opacity: 0.85;
+}
+
+.bracket-title {
+  margin: 2px 0 4px;
+  font-family: var(--serif);
+  font-size: 28px;
+  font-weight: 900;
+}
+
+.bracket-head .muted {
+  display: block;
+}
+
+.bracket-share {
+  margin-top: 10px;
+}
+
+.bracket-share .pill {
+  min-height: 40px;
+  font-size: 14px;
+}
+
+.bracket-scroll {
+  overflow-x: auto;
+  padding: 4px 0 12px;
+}
+
+.bracket-canvas {
+  position: relative;
+}
+
+.bracket-round {
+  position: absolute;
+  top: 0;
+  width: 176px;
+  text-align: center;
+  color: var(--gold-text);
+  font-family: var(--serif);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.bracket-round.now {
+  color: var(--pink);
+}
+
+.bracket-divider {
+  position: absolute;
+  top: 26px;
+  border-left: 2px dashed rgba(217, 164, 65, 0.5);
+}
+
+.bm-card {
+  position: absolute;
+  width: 176px;
+  overflow: hidden;
+  color: var(--ink);
+  background: var(--paper);
+  border-radius: 12px;
+}
+
+.bm-card.place {
+  background: #EADBC0;
+}
+
+.bm-card.live {
+  box-shadow: 0 0 0 2px var(--shu);
+}
+
+.bm-head {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 10px;
+  color: var(--brown);
+  background: var(--sand);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.bm-card.place .bm-head {
+  background: #D9C6A3;
+}
+
+.bm-status.live { color: var(--shu); }
+.bm-status.done,
+.bm-status.bye { color: #1E5631; }
+.bm-status.wait { color: #8E8676; }
+
+.bm-side {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-top: 1px solid #DCCDAF;
+
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.bm-side:first-of-type {
+  border-top: 0;
+}
+
+.bm-side:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.bm-side.can {
+  cursor: pointer;
+}
+
+.bm-side.dim {
+  color: #9A8C74;
+}
+
+.bm-side.won {
+  color: var(--paper);
+  background: var(--shu);
+}
+
+.bm-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bm-tag {
+  padding: 0 6px;
+  color: var(--night);
+  background: var(--gold);
+  border-radius: 999px;
+  font-size: 11px;
+}
+
+.bm-tag.won {
+  color: var(--gold-text);
+  background: var(--night);
+}
+
+.bm-link {
+  position: absolute;
+  width: 16px;
+  border-top: 2px solid var(--gold);
+  border-right: 2px solid var(--gold);
+  border-bottom: 2px solid var(--gold);
+  border-radius: 0 8px 8px 0;
+}
+
+.bm-link-out {
+  position: absolute;
+  width: 14px;
+  border-top: 2px solid var(--gold);
+}
+
+.bracket-tip {
+  padding: 0 16px 10px;
+}
+
+.standing-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+  padding: 8px 12px;
+  background: var(--night-2);
+  border-radius: 14px;
+}
+
+.standing-row.champ {
+  color: var(--night);
+  background: var(--gold);
+}
+
+.standing-row .medal {
+  width: 40px;
+  height: 40px;
+  flex-basis: 40px;
+  font-size: 12px;
+}
+
+@media (min-width: 900px) {
+  .bracket-tip {
+    padding-left: 32px;
+  }
+}

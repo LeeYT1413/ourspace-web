@@ -42,6 +42,8 @@ import {
   taiwanToday
 } from "./util.js";
 
+import { syncMemberToBracket } from "./bracket-api.js";
+
 
 var MEMBER_COOKIE = "os_member";
 var STATE_COOKIE = "os_line_state";
@@ -184,7 +186,14 @@ function publicMember(member) {
    ERP 同步（失敗不影響官網）
 ========================================================= */
 
+/* 會員資料有變動時：同步到 ERP 會員資料，以及比賽賽程資料庫的會員主檔 */
 export async function syncMemberToErp(env, userId) {
+  await syncErpOnly(env, userId);
+  await syncMemberToBracket(env, userId);
+}
+
+
+async function syncErpOnly(env, userId) {
 
   if (!env.ERP_DB) {
     return;
@@ -404,10 +413,12 @@ async function memberPlayerId(env, userId, primaryTeamId) {
 }
 
 
-/* 會員在某個戰隊的身分（選手資料）：一個戰隊對應一個暱稱；沒有就用會員暱稱建立 */
+/* 會員的選手資料：每位會員只保留一筆主要的；還沒有才用會員暱稱建立 */
 export async function ensurePlayer(env, userId, teamId) {
 
-  var existing = await env.DB.prepare("SELECT id FROM players WHERE user_id = ? AND team_id = ? LIMIT 1")
+  var existing = await env.DB.prepare(
+    "SELECT id FROM players WHERE user_id = ? ORDER BY CASE WHEN team_id = ? THEN 0 ELSE 1 END, id LIMIT 1"
+  )
     .bind(userId, teamId)
     .first();
 
@@ -546,7 +557,11 @@ export async function handleMemberApi(request, url, env) {
   if (parts[0] === "teams" && id && method === "POST") {
 
     if (parts[2] === "join" && parts.length === 3) {
-      return joinTeam(env, member, id);
+      return joinTeam(request, env, member, id);
+    }
+
+    if (parts[2] === "nickname" && parts.length === 3) {
+      return setTeamNickname(request, env, member, id);
     }
 
     if (parts[2] === "leave" && parts.length === 3) {
@@ -945,8 +960,9 @@ async function mySignups(env, member) {
 
   var result = await env.DB.prepare(
     "SELECT c.id, c.nickname, c.user_id, c.registered_by, c.checked_in, c.checkin_number, " +
-    "e.id AS event_id, e.title, e.event_date, e.start_time " +
+    "e.id AS event_id, e.title, e.event_date, e.start_time, rb.nickname AS registered_by_name " +
     "FROM checkin_entries c INNER JOIN checkin_events e ON e.id = c.event_id " +
+    "LEFT JOIN users rb ON rb.id = c.registered_by " +
     "WHERE (c.user_id = ? OR c.registered_by = ?) AND e.archived_at IS NULL AND e.event_date >= ? " +
     "ORDER BY e.event_date, e.id, c.id"
   )
@@ -964,6 +980,7 @@ async function mySignups(env, member) {
         start_time: row.start_time,
         nickname: row.nickname,
         is_self: row.user_id === member.id,
+        registered_by_name: row.user_id === member.id && row.registered_by && row.registered_by !== member.id ? row.registered_by_name : null,
         checked_in: row.checked_in,
         checkin_number: row.checkin_number,
         can_cancel: Number(row.checked_in) !== 1
@@ -1001,14 +1018,20 @@ async function cancelSignup(env, member, entryId) {
 
 async function myHistory(env, member) {
 
+  /* 報到系統的紀錄 + 系統管理員手動補登的紀錄 */
   var result = await env.DB.prepare(
+    "SELECT * FROM (" +
     "SELECT e.id, e.title, e.event_date, e.event_type, c.checkin_number, " +
     "(SELECT r.rank_label FROM checkin_results r WHERE r.entry_id = c.id ORDER BY r.sort LIMIT 1) AS rank_label " +
     "FROM checkin_entries c INNER JOIN checkin_events e ON e.id = c.event_id " +
-    "WHERE c.user_id = ? AND c.checked_in = 1 AND e.archived_at IS NOT NULL " +
-    "ORDER BY e.event_date DESC, e.id DESC LIMIT 100"
+    "WHERE (c.user_id = ? OR c.player_id IN (SELECT id FROM players WHERE user_id = ?)) " +
+    "AND c.checked_in = 1 AND e.archived_at IS NOT NULL " +
+    "UNION ALL " +
+    "SELECT NULL AS id, g.event_name AS title, g.event_date, NULL AS event_type, NULL AS checkin_number, NULL AS rank_label " +
+    "FROM manual_games g WHERE g.user_id = ?" +
+    ") ORDER BY event_date DESC LIMIT 150"
   )
-  .bind(member.id)
+  .bind(member.id, member.id, member.id)
   .all();
 
   return jsonResponse({ success: true, data: result.results || [] });
@@ -1023,7 +1046,7 @@ async function myPlacements(env, member) {
 
   var results = await env.DB.batch([
     env.DB.prepare(
-      "SELECT pp.event_date, pp.event_name, pp.participant_count, pp.placement, pp.configs, t.team_name " +
+      "SELECT pp.event_date, pp.event_name, pp.participant_count, pp.placement, pp.configs, pp.entry_name, t.team_name " +
       "FROM player_placements pp INNER JOIN players p ON p.id = pp.player_id " +
       "LEFT JOIN teams t ON t.id = p.team_id " +
       "WHERE p.user_id = ? ORDER BY pp.event_date DESC, pp.id DESC LIMIT 100"
@@ -1131,8 +1154,7 @@ async function myTeams(env, member) {
 
   var results = await env.DB.batch([
     env.DB.prepare(
-      "SELECT t.id, t.team_name, t.team_logo_url, t.captain_user_id, mt.status, " +
-      "(SELECT COALESCE(NULLIF(p.nickname, ''), p.player_name) FROM players p WHERE p.user_id = mt.user_id AND p.team_id = t.id LIMIT 1) AS nickname " +
+      "SELECT t.id, t.team_name, t.team_logo_url, t.captain_user_id, mt.status, mt.nickname AS nickname " +
       "FROM member_teams mt INNER JOIN teams t ON t.id = mt.team_id " +
       "WHERE mt.user_id = ? AND t.status = 'active' ORDER BY mt.id"
     ).bind(member.id),
@@ -1180,7 +1202,15 @@ async function myTeams(env, member) {
 }
 
 
-async function joinTeam(env, member, teamId) {
+async function joinTeam(request, env, member, teamId) {
+
+  var body = (await parseJsonBody(request)) || {};
+  var teamNickname = cleanText(body.nickname).slice(0, 50);
+
+  if (teamNickname && !validName(teamNickname)) {
+    return errorResponse("INVALID_NAME", 400, { field: "nickname" });
+  }
+
 
   var team = await env.DB.prepare("SELECT id, captain_user_id FROM teams WHERE id = ? AND status = 'active'")
     .bind(teamId)
@@ -1194,9 +1224,9 @@ async function joinTeam(env, member, teamId) {
   var status = team.captain_user_id === member.id ? "active" : "pending";
 
   await env.DB.prepare(
-    "INSERT OR IGNORE INTO member_teams (user_id, team_id, status, approved_at) VALUES (?, ?, ?, ?)"
+    "INSERT OR IGNORE INTO member_teams (user_id, team_id, status, approved_at, nickname) VALUES (?, ?, ?, ?, ?)"
   )
-  .bind(member.id, teamId, status, status === "active" ? taiwanNow() : null)
+  .bind(member.id, teamId, status, status === "active" ? taiwanNow() : null, teamNickname || null)
   .run();
 
   if (status === "active") {
@@ -1329,4 +1359,23 @@ async function uploadLogo(request, env, member) {
     .run();
 
   return jsonResponse({ success: true, data: { id: result.meta.last_row_id, url: imageUrl(result.meta.last_row_id) } }, 201);
+}
+
+
+
+/* 會員自己改「隊內暱稱」（陀螺戰隊頁顯示；隊長不能改別人的） */
+async function setTeamNickname(request, env, member, teamId) {
+
+  var body = (await parseJsonBody(request)) || {};
+  var nickname = cleanText(body.nickname).slice(0, 50);
+
+  if (nickname && !validName(nickname)) {
+    return errorResponse("INVALID_NAME", 400, { field: "nickname" });
+  }
+
+  await env.DB.prepare("UPDATE member_teams SET nickname = ? WHERE user_id = ? AND team_id = ?")
+    .bind(nickname || null, member.id, teamId)
+    .run();
+
+  return jsonResponse({ success: true });
 }

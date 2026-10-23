@@ -134,7 +134,10 @@ var RESOURCES = {
     /* 列表多帶「上位次數」 */
     listSelect:
       "SELECT players.*, " +
-      "(SELECT COUNT(*) FROM player_placements pp WHERE pp.player_id = players.id) AS upper_count " +
+      "(SELECT COUNT(*) FROM player_placements pp WHERE pp.player_id = players.id) AS upper_count, " +
+      "(SELECT COUNT(*) FROM checkin_entries c INNER JOIN checkin_events e ON e.id = c.event_id " +
+      " WHERE c.player_id = players.id AND c.checked_in = 1 AND e.archived_at IS NOT NULL) AS games, " +
+      "(SELECT u.nickname FROM users u WHERE u.id = players.user_id) AS member_name " +
       "FROM players",
     columns: {
       player_name: { type: "text", required: true, max: 100 },
@@ -261,7 +264,8 @@ var RESOURCES = {
       event_date: { type: "date", required: true },
       event_name: { type: "text", required: true, max: 100 },
       participant_count: { type: "int", required: true, min: 1 },
-      placement: { type: "int", required: true, min: 1 }
+      placement: { type: "int", required: true, min: 1 },
+      entry_name: { type: "text", max: 100 }
     },
     prepare: function (values) {
       if (

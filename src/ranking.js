@@ -18,7 +18,7 @@
 export var RANK_MIN_PLAYERS = 30;
 
 /* 計算方式改了就換版本號，上線後第一次打開排行榜會自動重算 */
-var RANK_VERSION = "clean-v4";
+var RANK_VERSION = "clean-v5";
 
 
 export async function markRankingDirty(env) {
@@ -44,8 +44,8 @@ export async function rebuildRanking(env) {
       "SELECT " +
       "CASE WHEN u.id IS NOT NULL THEN 'U' || u.id ELSE 'P' || p.id END AS rank_key, " +
       "u.id, CASE WHEN u.id IS NULL THEN p.id ELSE NULL END, " +
-      "COALESCE(MAX(CASE WHEN u.id IS NOT NULL THEN COALESCE((SELECT x.nickname FROM players x " +
-      "  WHERE x.user_id = u.id AND x.team_id = u.primary_team_id AND x.nickname IS NOT NULL LIMIT 1), u.nickname) END), " +
+      /* 會員：顯示主要暱稱與主要戰隊 */
+      "COALESCE(MAX(CASE WHEN u.id IS NOT NULL THEN u.nickname END), " +
       "  MAX(COALESCE(NULLIF(p.nickname, ''), p.player_name))), " +
       "COALESCE(MAX(CASE WHEN u.id IS NOT NULL THEN ut.team_name END), MAX(t.team_name)), " +
       "COALESCE(MAX(u.avatar_url), MAX(p.avatar_url)), " +
@@ -112,7 +112,7 @@ export async function rankingHighlights(env, key) {
   var where = match[1] === "U" ? "p.user_id = ?" : "p.id = ?";
 
   var rows = await env.DB.prepare(
-    "SELECT pp.event_date, pp.event_name, pp.participant_count, pp.placement, pp.configs, t.team_name " +
+    "SELECT pp.event_date, pp.event_name, pp.participant_count, pp.placement, pp.configs, pp.entry_name, t.team_name " +
     "FROM player_placements pp INNER JOIN players p ON p.id = pp.player_id " +
     "LEFT JOIN teams t ON t.id = p.team_id " +
     "WHERE " + where + " AND pp.participant_count >= ? AND pp.placement > 0 " +
