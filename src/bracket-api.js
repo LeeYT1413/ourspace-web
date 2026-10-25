@@ -259,6 +259,7 @@ export function resolveMatches(rows) {
       b_state: b.pending ? "pending" : b.bye ? "bye" : "ok",
       state: state,
       winner: winner,
+      called: Number(m.called) === 1,
       a_from: m.a_from,
       b_from: m.b_from
     });
@@ -349,6 +350,11 @@ export async function handleBracketApi(request, url, env) {
     return setResult(await parseJsonBody(request), env, member, Number(parts[0]));
   }
 
+  /* 主持人叫號：等待中 ↔ 比賽中 */
+  if (isPositiveInteger(parts[0]) && parts[1] === "call" && method === "POST") {
+    return setCalled(await parseJsonBody(request), env, member, Number(parts[0]));
+  }
+
   if (!(await isOpenFor(env, member))) {
     return errorResponse("NOT_OPEN", 403);
   }
@@ -431,6 +437,7 @@ async function viewBracket(request, env, code) {
       share_code: bracket.share_code,
       title: bracket.title,
       event_date: bracket.event_date,
+      start_time: bracket.start_time,
       format: bracket.format,
       status: bracket.status,
       owner_name: bracket.owner_name,
@@ -570,6 +577,7 @@ async function getDraft(env, member, id) {
       share_code: bracket.share_code,
       title: bracket.title,
       event_date: bracket.event_date,
+      start_time: bracket.start_time,
       format: bracket.format,
       status: bracket.status,
       participants: parseNames(bracket.participants),
@@ -605,8 +613,11 @@ function cleanDraft(body) {
     }
   });
 
+  var time = cleanText(body.start_time);
+
   return {
     title: title,
+    time: /^\d{2}:\d{2}$/.test(time) ? time : null,
     date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null,
     format: format,
     names: names,
@@ -656,8 +667,9 @@ async function saveDraft(body, env, member, id) {
     }
 
     var created = await env.BRACKET_DB.prepare(
-      "INSERT INTO brackets (share_code, owner_id, title, event_date, format, participants, helpers) VALUES (?, ?, ?, ?, ?, ?, ?)"
-    ).bind(randomCode(10), member.id, draft.title, draft.date, draft.format,
+      "INSERT INTO brackets (share_code, owner_id, title, event_date, start_time, format, participants, helpers) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    ).bind(randomCode(10), member.id, draft.title, draft.date, draft.time, draft.format,
       JSON.stringify(draft.names), JSON.stringify(draft.helpers)).run();
 
     return jsonResponse({ success: true, id: created.meta.last_row_id }, 201);
@@ -672,13 +684,13 @@ async function saveDraft(body, env, member, id) {
   /* 對戰表建立後，只能改名稱、日期、協助者；參賽者和賽制不能再改 */
   if (check.bracket.status === "draft") {
     await env.BRACKET_DB.prepare(
-      "UPDATE brackets SET title = ?, event_date = ?, format = ?, participants = ?, helpers = ?, " +
+      "UPDATE brackets SET title = ?, event_date = ?, start_time = ?, format = ?, participants = ?, helpers = ?, " +
       "updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-    ).bind(draft.title, draft.date, draft.format, JSON.stringify(draft.names), JSON.stringify(draft.helpers), id).run();
+    ).bind(draft.title, draft.date, draft.time, draft.format, JSON.stringify(draft.names), JSON.stringify(draft.helpers), id).run();
   } else {
     await env.BRACKET_DB.prepare(
-      "UPDATE brackets SET title = ?, event_date = ?, helpers = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-    ).bind(draft.title, draft.date, JSON.stringify(draft.helpers), id).run();
+      "UPDATE brackets SET title = ?, event_date = ?, start_time = ?, helpers = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+    ).bind(draft.title, draft.date, draft.time, JSON.stringify(draft.helpers), id).run();
   }
 
   return jsonResponse({ success: true, id: id });
@@ -812,6 +824,29 @@ async function setResult(body, env, member, id) {
   await env.BRACKET_DB.prepare(
     "UPDATE brackets SET status = ?, champion = ?, finished_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
   ).bind(finished ? "done" : "live", champName, finished ? taiwanNow() : null, id).run();
+
+  return jsonResponse({ success: true });
+}
+
+
+
+async function setCalled(body, env, member, id) {
+
+  body = body || {};
+
+  var bracket = await env.BRACKET_DB.prepare("SELECT * FROM brackets WHERE id = ?").bind(id).first();
+
+  if (!bracket || bracket.status === "draft") {
+    return errorResponse("NOT_FOUND", 404);
+  }
+
+  if (bracket.owner_id !== member.id && parseIds(bracket.helpers).indexOf(member.id) === -1) {
+    return errorResponse("FORBIDDEN", 403);
+  }
+
+  await env.BRACKET_DB.prepare(
+    "UPDATE bracket_matches SET called = ?, updated_at = ? WHERE bracket_id = ? AND code = ?"
+  ).bind(body.called ? 1 : 0, taiwanNow(), id, cleanText(body.code)).run();
 
   return jsonResponse({ success: true });
 }

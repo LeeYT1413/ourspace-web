@@ -1491,6 +1491,86 @@
     drawPlacements();
 
     placeBlock.appendChild(sectionTitle("上位者與比賽獎品", "名次和獎品會照場次的獎品順序自動帶入，可以修改；每個獎品給一位上位者，選走的不會再出現。封存時，上位者會寫進上位紀錄。"));
+
+    /* 從「比賽賽程」匯入名次：貼上對戰表上複製的賽事 ID */
+    if (!locked) {
+
+      var importId = input("text", "", { maxlength: "20", placeholder: "貼上比賽賽程的賽事 ID", "aria-label": "比賽賽程的賽事 ID" });
+      var importRow = el("div", "ck-inline ck-import");
+
+      importRow.appendChild(importId);
+      importRow.appendChild(button("匯入名次", "btn btn-gold", function () {
+
+        var code = importId.value.trim();
+
+        if (!/^[A-Za-z0-9]{6,20}$/.test(code)) {
+          toast("請貼上正確的賽事 ID。", "error");
+          return;
+        }
+
+        fetch("/api/brackets/view/" + encodeURIComponent(code), { credentials: "same-origin" })
+          .then(function (r) { return r.json(); })
+          .then(function (res) {
+
+            if (!res || !res.success) {
+              toast("找不到這個賽事 ID。", "error");
+              return;
+            }
+
+            var byName = {};
+
+            data.checked.forEach(function (entry) {
+              byName[String(entry.nickname).trim().toLowerCase()] = entry.id;
+            });
+
+            var options = (data.prize_options || []).map(function (opt) { return opt.label || opt.name; });
+            var missing = [];
+            var list = [];
+
+            res.data.standings.forEach(function (row) {
+
+              if (!row.name || row.name === "—") {
+                return;
+              }
+
+              var entryId = byName[String(row.name).trim().toLowerCase()] || null;
+
+              if (!entryId) {
+                missing.push(row.name);
+              }
+
+              list.push({
+                rank_label: "第" + (list.length + 1) + "名",
+                entry_id: entryId,
+                prize: options[list.length] || "",
+                configs: []
+              });
+            });
+
+            if (!list.length) {
+              toast("這場比賽賽程還沒有名次。", "error");
+              return;
+            }
+
+            if (form.placements.some(function (p) { return p.entry_id; }) &&
+                !confirmBox("要用比賽賽程的名次取代目前的上位者嗎？")) {
+              return;
+            }
+
+            form.placements = list;
+            drawPlacements();
+
+            toast(missing.length
+              ? "已匯入 " + list.length + " 個名次。找不到報到名單裡的：" + missing.join("、") + "（請手動選）"
+              : "已匯入 " + list.length + " 個名次。", missing.length ? "error" : "success");
+          })
+          .catch(function () {
+            toast("匯入失敗，請稍後再試。", "error");
+          });
+      }));
+
+      placeBlock.appendChild(importRow);
+    }
     placeBlock.appendChild(placeList);
 
     if (!locked) {
@@ -1837,12 +1917,12 @@
         return;
       }
 
-      var saveBtn = button(ck.picked.length ? "儲存（" + ck.picked.length + " 人）" : "先點選要處理的人", "btn btn-primary btn-block ck-big-btn", saveBatch);
+      var saveBtn = button(ck.picked.length ? "儲存（" + ck.picked.length + " 人）" : "儲存", "btn btn-primary btn-block ck-big-btn", saveBatch);
 
       saveBtn.disabled = !ck.picked.length;
       results.appendChild(saveBtn);
       results.appendChild(el("p", "field-help ck-center",
-        "號碼自動帶入：已有號碼的沿用，沒有的從目前最大號依序 +1，也可以手動改；改了之後，下一位會從你改的號碼接著 +1。再點一次名字就收起卡片，不列入這次報到。"));
+        "小Tips：批次報到由下往上勾選"));
     }
 
     function resultCard(entry, assigned) {

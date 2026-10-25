@@ -3016,3 +3016,187 @@ h2 {
     padding-left: 32px;
   }
 }
+
+/* ----- 對戰表 v2 ----- */
+
+.copy-id {
+  width: 44px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 2px solid var(--gold);
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.copy-icon {
+  position: relative;
+  width: 18px;
+  height: 18px;
+}
+
+.copy-icon::before,
+.copy-icon::after {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--gold-text);
+  border-radius: 3px;
+}
+
+.copy-icon::before {
+  left: 0;
+  top: 0;
+}
+
+.copy-icon::after {
+  left: 5px;
+  top: 5px;
+  background: var(--night);
+}
+
+.bm-line-h {
+  position: absolute;
+  border-top: 2px solid var(--gold);
+}
+
+.bm-line-v {
+  position: absolute;
+  border-left: 2px solid var(--gold);
+}
+
+.bm-side {
+  height: 40px;
+  cursor: default;
+}
+
+.bm-side .bm-tag {
+  border: 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 22px;
+}
+
+button.bm-tag {
+  cursor: pointer;
+}
+
+/* 點我：放大 */
+.bm-pick {
+  min-width: 56px;
+  height: 30px;
+  padding: 0 10px;
+  color: var(--night);
+  background: var(--gold);
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 900;
+  box-shadow: 0 2px 0 #9C7322;
+}
+
+.bm-pick:active {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+/* 等待中：透明底、白字 */
+.bm-card.waiting {
+  color: var(--paper);
+  background: transparent;
+  border: 1px solid var(--line-strong);
+}
+
+.bm-card.waiting .bm-head {
+  color: var(--muted);
+  background: rgba(241, 230, 210, 0.08);
+}
+
+.bm-card.waiting .bm-side {
+  color: var(--paper);
+  border-top-color: var(--line);
+}
+
+.bm-status.live { color: var(--shu); }
+.bm-status.done { color: #1E5631; }
+.bm-status.wait { color: var(--muted); }
+
+.bm-status-btn {
+  padding: 0 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.bm-status-btn.wait {
+  color: var(--paper);
+  background: transparent;
+  border: 1px solid var(--paper);
+}
+
+.bm-status-btn.live {
+  color: var(--paper);
+  background: var(--shu);
+  border: 1px solid var(--shu);
+}
+
+/* 全螢幕 */
+.bracket-board-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 16px 6px;
+}
+
+.bracket-board-head strong {
+  display: none;
+}
+
+.bracket-full-btn {
+  min-height: 36px;
+  font-size: 13px;
+}
+
+.bracket-board.is-full {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: flex;
+  flex-direction: column;
+  background: var(--night);
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.bracket-board.is-full .bracket-board-head {
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.bracket-board.is-full .bracket-board-head strong {
+  display: block;
+  font-size: 20px;
+}
+
+.bracket-board.is-full .bracket-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 8px;
+}
+
+.bracket-full-open {
+  overflow: hidden;
+}
+
+.bracket-full-open .ad-float {
+  display: none;
+}

@@ -440,6 +440,7 @@
     clearInterval(state.leagueTimer);
     clearInterval(state.carouselTimer);
     clearInterval(state.bracketTimer);
+    document.body.classList.remove("bracket-full-open");
     closeMenu();
     document.body.classList.remove("has-bottom-bar");
     updateAd();
@@ -2796,8 +2797,6 @@
     var full = res.count >= res.limit;
     var tab = state.bracketTab || "mine";
 
-    app.appendChild(h("p", { class: "lead", text: "跟朋友打小比賽也能用。建好之後把連結傳給大家，誰都看得到。" }));
-
     var top = h("section", { class: "section" }, [
       h("div", { class: "row-between bracket-count" }, [h("span", { class: "muted small", text: "我建立的 " + res.count + " / " + res.limit })]),
       h("a", { class: "pill pill-red pill-big pill-block" + (full ? " is-disabled" : ""), href: full ? null : "#bracket-new", text: full ? "已達上限，請先刪除舊賽程" : "＋ 建立新賽程" }),
@@ -2939,46 +2938,29 @@
     var title = h("input", { type: "text", maxlength: "60", placeholder: "例如：週五朋友盃", "aria-label": "賽程名稱" });
     title.value = data.title || "";
 
-    var dateText = h("input", { type: "text", inputmode: "numeric", placeholder: "例如 20261024 或 1024", "aria-label": "日期（可以直接輸入）" });
-    var datePicker = h("input", { type: "date", class: "date-hidden", tabindex: "-1", "aria-hidden": "true" });
+    /* 日期 + 時間（24 小時制、每 10 分鐘）；新增時預設今天、現在時間往前取整 10 分 */
+    var now = new Date(Date.now() + (8 * 60 + new Date().getTimezoneOffset()) * 60000);
+    var dateInput = h("input", { type: "date", "aria-label": "日期" });
+    var timeInput = h("select", { class: "select time-select", "aria-label": "時間（24 小時制）" });
+    var defaultTime = pad2(now.getHours()) + ":" + pad2(Math.floor(now.getMinutes() / 10) * 10);
+    var timeValue = data.id ? (data.start_time || "") : defaultTime;
 
-    dateText.value = data.event_date ? data.event_date.replace(/-/g, "/") : "";
+    dateInput.value = data.id ? (data.event_date || "") : now.getFullYear() + "-" + pad2(now.getMonth() + 1) + "-" + pad2(now.getDate());
 
-    dateText.addEventListener("input", function () {
-      dateText.value = formatDateTyping(dateText.value);
-    });
+    timeInput.appendChild(h("option", { value: "", text: "時間" }));
 
-    dateText.addEventListener("change", function () {
-
-      var d = dateText.value.replace(/\D/g, "");
-
-      if (d.length === 3 || d.length === 4) {
-        dateText.value = new Date().getFullYear() + "/" + ("0" + d.slice(0, d.length - 2)).slice(-2) + "/" + d.slice(-2);
+    for (var hh = 0; hh < 24; hh++) {
+      for (var mm = 0; mm < 60; mm += 10) {
+        var t = pad2(hh) + ":" + pad2(mm);
+        var option = h("option", { value: t, text: t });
+        option.selected = t === timeValue;
+        timeInput.appendChild(option);
       }
-    });
-
-    datePicker.addEventListener("change", function () {
-      dateText.value = datePicker.value.replace(/-/g, "/");
-    });
-
-    var calendar = h("button", {
-      class: "cal-btn",
-      type: "button",
-      "aria-label": "從月曆選日期",
-      onClick: function () {
-        datePicker.value = /^\d{4}\/\d{2}\/\d{2}$/.test(dateText.value) ? dateText.value.replace(/\//g, "-") : "";
-        if (datePicker.showPicker) {
-          try { datePicker.showPicker(); return; } catch (error) { /* 不支援就改用 focus */ }
-        }
-        datePicker.focus();
-        datePicker.click();
-      },
-      text: "📅"
-    });
+    }
 
     /* 賽制 */
     var formatBox = h("div", { class: "seg seg-inline" });
-    var formatHint = h("span", { class: "muted small" });
+
 
     function drawFormat() {
 
@@ -2993,7 +2975,7 @@
         }));
       });
 
-      formatHint.textContent = BRACKET_HINTS[form.format];
+
     }
 
     /* 參賽者 */
@@ -3056,7 +3038,7 @@
 
     /* 協助者 */
     var helperChips = h("div", { class: "chip-list" });
-    var helperHint = h("span", { class: "muted small" });
+
     var helperSearch = h("input", { type: "search", placeholder: "搜尋會員暱稱或電話末三碼", "aria-label": "搜尋協助者" });
     var helperResults = h("div", { class: "pick-results" });
     var searchTimer = null;
@@ -3072,7 +3054,7 @@
         ]));
       });
 
-      helperHint.textContent = "已加入 " + form.helpers.length + " / 10 位。協助者可以在對戰表點勝方，不能刪除賽程。";
+
     }
 
     helperSearch.addEventListener("input", function () {
@@ -3124,11 +3106,10 @@
 
     function payload() {
 
-      var date = dateText.value.trim();
-
       return {
         title: title.value.trim(),
-        event_date: /^\d{4}\/\d{2}\/\d{2}$/.test(date) ? date.replace(/\//g, "-") : "",
+        event_date: dateInput.value,
+        start_time: timeInput.value,
         format: form.format,
         participants: form.players,
         helpers: form.helpers.map(function (m) { return m.id; })
@@ -3189,10 +3170,9 @@
       h("label", { class: "field" }, [h("span", { class: "label", text: "賽程名稱" }), title]),
       h("div", { class: "field" }, [
         h("span", { class: "label", text: "日期" }),
-        h("div", { class: "date-row" }, [dateText, calendar, datePicker]),
-        h("span", { class: "muted small", text: "直接打數字就好，會自動整理成 2026/10/24；也可以按右邊的月曆選。" })
+        h("div", { class: "date-row" }, [dateInput, timeInput])
       ]),
-      h("div", { class: "field" }, [h("span", { class: "label", text: "賽制（要分出幾個名次）" }), formatBox, formatHint]),
+      h("div", { class: "field" }, [h("span", { class: "label", text: "賽制" }), formatBox]),
       h("div", { class: "field" }, [
         h("div", { class: "row-between" }, [
           countLabel,
@@ -3200,18 +3180,15 @@
         ]),
         playerList,
         addArea,
-        h("button", { class: "dash-btn", type: "button", onClick: addPlayers, text: "＋ 加入這些名字" }),
-        h("span", { class: "muted small", text: "第一輪照上面的順序兩兩對戰（1 對 2、3 對 4…），人數不是 2、4、8、16… 時會自動安排輪空。按「洗牌」會隨機打亂一次順序，可以一直按到滿意為止。" })
+        h("button", { class: "dash-btn", type: "button", onClick: addPlayers, text: "＋ 加入這些名字" })
       ]),
       h("div", { class: "field" }, [
-        h("span", { class: "label", text: "協助輸入勝負的會員（選填，最多 10 位）" }),
+        h("span", { class: "label", text: "協助輸入勝負的會員（最多 10 位）" }),
         helperChips,
         helperSearch,
-        helperResults,
-        helperHint
+        helperResults
       ]),
-      h("div", { class: "row-gap" }, [saveBtn, startBtn]),
-      h("span", { class: "muted small center-text", text: "「儲存賽程」可以先存起來慢慢改；⚠「建立對戰表」後對戰組合就固定了，不能再換對手。" })
+      h("div", { class: "row-gap" }, [saveBtn, startBtn])
     ]));
 
     drawFormat();
@@ -3251,8 +3228,10 @@
 
   function drawBracketView(data, reload) {
 
-    var scroller = app.querySelector(".bracket-scroll");
-    var scrollLeft = scroller ? scroller.scrollLeft : 0;
+    var oldScroll = app.querySelector(".bracket-scroll");
+    var scrollLeft = oldScroll ? oldScroll.scrollLeft : 0;
+    var scrollTop = oldScroll ? oldScroll.scrollTop : 0;
+    var wasFull = !!app.querySelector(".bracket-board.is-full");
 
     clear(app);
 
@@ -3261,48 +3240,55 @@
     var link = bracketLink(data.share_code);
     var statusText = { live: "比賽中", done: "已結束" }[data.status] || "";
 
+    var copyId = h("button", {
+      class: "copy-id",
+      type: "button",
+      "aria-label": "複製賽事 ID（賽後紀錄匯入用）",
+      title: "複製賽事 ID",
+      onClick: function () {
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(data.share_code).then(function () { toast("已複製賽事 ID：" + data.share_code, "success"); });
+        } else {
+          window.prompt("賽事 ID", data.share_code);
+        }
+      }
+    }, [h("span", { class: "copy-icon", "aria-hidden": "true" })]);
+
     app.appendChild(h("section", { class: "section bracket-head" }, [
       h("span", { class: "bracket-sun", "aria-hidden": "true" }),
       h("span", { class: "kicker gold", text: "BRACKET・" + (BRACKET_FORMATS[data.format] || "") + (statusText ? "・" + statusText : "") }),
       h("h1", { class: "bracket-title", text: data.title }),
-      h("span", { class: "muted small", text: bracketDate(data.event_date) + "・" + data.players + " 人" + (data.owner_name ? "・建立者 " + data.owner_name : "") }),
+      h("span", { class: "muted small", text: bracketDate(data.event_date) + (data.start_time ? " " + data.start_time : "") + "・" + data.players + " 人" + (data.owner_name ? "・建立者 " + data.owner_name : "") }),
       h("div", { class: "row-gap bracket-share" }, [
-        h("a", { class: "pill pill-line", href: "https://social-plugins.line.me/lineit/share?url=" + encodeURIComponent(link), target: "_blank", rel: "noopener", text: "分享到 LINE" }),
-        h("button", { class: "pill pill-outline", type: "button", onClick: function () { copyText(link); }, text: "複製連結" })
+        h("button", { class: "pill pill-outline", type: "button", onClick: function () { copyText(link); }, text: "複製連結" }),
+        copyId
       ])
     ]));
 
-    app.appendChild(h("p", { class: "lead", text: data.can_edit
-      ? "點勝方就會記錄（金色「點我」），再點一次可以取消。紅框是正在打的場次。"
-      : "紅框是正在打的場次，比賽中會自動更新。" }));
+    /* ----- 樹狀圖（Round 1 的輪空不畫，直接當種子放在 Round 2） ----- */
 
-    /* ----- 樹狀圖 ----- */
-
-    var COL = 206, CARD = 92, ROW = 104, TOP = 30, X0 = 16;
+    var COL = 206, CARD = 96, ROW = 108, TOP = 30, X0 = 16;
     var main = data.matches.filter(function (m) { return m.code.charAt(0) === "R"; });
     var place = data.matches.filter(function (m) { return m.code.charAt(0) !== "R"; });
     var firstCount = main.filter(function (m) { return m.round === 1; }).length;
-    var current = -1;
-
-    main.forEach(function (m) {
-      if (current < 0 && m.state === "live") {
-        current = m.round;
-      }
-    });
-
     var placeX = X0 + data.rounds * COL + 24;
     var rows = Math.max(firstCount, place.length, 1);
     var width = place.length ? placeX + 176 + 16 : X0 * 2 + data.rounds * COL;
     var height = TOP + rows * ROW + 10;
 
+    function hidden(m) {
+      return m.round === 1 && m.state === "bye" && m.code.charAt(0) === "R";
+    }
+
+    function posOf(m) {
+      var gap = ROW * Math.pow(2, m.round - 1);
+      return { x: X0 + (m.round - 1) * COL, y: TOP + (m.slot - 1) * gap + (gap - ROW) / 2, gap: gap };
+    }
+
     var canvas = h("div", { class: "bracket-canvas", style: "width: " + width + "px; height: " + height + "px" });
 
     for (var r = 1; r <= data.rounds; r++) {
-      canvas.appendChild(h("span", {
-        class: "bracket-round" + (r === current ? " now" : ""),
-        style: "left: " + (X0 + (r - 1) * COL) + "px",
-        text: "Round " + r
-      }));
+      canvas.appendChild(h("span", { class: "bracket-round", style: "left: " + (X0 + (r - 1) * COL) + "px", text: "Round " + r }));
     }
 
     if (place.length) {
@@ -3310,67 +3296,108 @@
       canvas.appendChild(h("span", { class: "bracket-divider", style: "left: " + (placeX - 12) + "px; height: " + (rows * ROW) + "px" }));
     }
 
-    function sideButton(m, key) {
+    function send(path, body) {
 
-      var name = m[key];
+      state.bracketBusy = true;
+
+      return bracketApi("POST", "/" + data.id + path, body)
+        .then(function () { return reload(true); })
+        .catch(function (error) { toast(bracketError(error, "儲存失敗。"), "error"); })
+        .then(function () { state.bracketBusy = false; });
+    }
+
+    function sideRow(m, key, called) {
+
       var sideState = m[key + "_state"];
       var won = m.winner === key;
       var lost = m.winner && m.winner !== key;
-      var playable = data.can_edit && (m.state === "live" || m.state === "done");
-      var label = sideState === "bye" ? "輪空" : sideState === "pending" ? "待定" : name;
+      var label = sideState === "ok" ? m[key] : (sideState === "bye" ? "輪空" : "");
+      var row = h("div", { class: "bm-side" + (won ? " won" : "") + (lost ? " dim" : "") }, [h("span", { class: "bm-name", text: label })]);
 
-      var tag = won ? "勝" : (playable && m.state === "live" ? "點我" : "");
+      if (won) {
+        var winTag = h("span", { class: "bm-tag won", text: "勝" });
 
-      var btn = h("button", {
-        class: "bm-side" + (won ? " won" : "") + (lost || sideState !== "ok" ? " dim" : "") + (playable ? " can" : ""),
-        type: "button",
-        disabled: !playable,
-        "aria-label": playable ? (won ? "取消 " + label + " 的勝利" : "記錄 " + label + " 獲勝") : label
-      }, [
-        h("span", { class: "bm-name", text: label }),
-        tag ? h("span", { class: "bm-tag" + (won ? " won" : ""), text: tag }) : null
-      ]);
+        /* 建立者、協助者點「勝」可以取消 */
+        if (data.can_edit && m.state === "done") {
+          winTag = h("button", {
+            class: "bm-tag won",
+            type: "button",
+            "aria-label": "取消 " + label + " 的勝利",
+            onClick: function () {
+              if (window.confirm("取消「" + label + "」的勝利？")) {
+                send("/result", { code: m.code, winner: null });
+              }
+            },
+            text: "勝"
+          });
+        }
 
-      if (playable) {
-        btn.addEventListener("click", function () {
-
-          state.bracketBusy = true;
-
-          bracketApi("POST", "/" + data.id + "/result", { code: m.code, winner: won ? null : key })
-            .then(function () { return reload(true); })
-            .catch(function (error) { toast(bracketError(error, "儲存失敗。"), "error"); })
-            .then(function () { state.bracketBusy = false; });
-        });
+        row.appendChild(winTag);
+      } else if (data.can_edit && called && m.state === "live") {
+        row.appendChild(h("button", {
+          class: "bm-pick",
+          type: "button",
+          "aria-label": "記錄 " + label + " 獲勝",
+          onClick: function () { send("/result", { code: m.code, winner: key }); },
+          text: "點我"
+        }));
       }
 
-      return btn;
+      return row;
     }
 
     function card(m, x, y, titleText, isPlace) {
 
-      var statusLabel = { live: "比賽中", done: "已結束", wait: "等待中", bye: "輪空晉級" }[m.state];
+      /* 雙方都確定、還沒打完：預設「等待中」，主持人叫號後切成「比賽中」 */
+      var ready = m.state === "live";
+      var called = ready && m.called;
+      var waiting = m.state === "wait" || (ready && !m.called);
+      var statusLabel = m.state === "done" ? "已結束" : m.state === "bye" ? "輪空晉級" : called ? "比賽中" : "等待中";
+
+      var status = h("span", { class: "bm-status " + (called ? "live" : m.state === "done" || m.state === "bye" ? "done" : "wait"), text: statusLabel });
+
+      if (data.can_edit && ready) {
+        status = h("button", {
+          class: "bm-status-btn " + (called ? "live" : "wait"),
+          type: "button",
+          "aria-label": called ? "改回等待中" : "叫號：改成比賽中",
+          onClick: function () { send("/call", { code: m.code, called: !called }); },
+          text: statusLabel
+        });
+      }
 
       return h("div", {
-        class: "bm-card" + (isPlace ? " place" : "") + (m.state === "live" ? " live" : ""),
+        class: "bm-card" + (isPlace ? " place" : "") + (waiting ? " waiting" : "") + (called ? " live" : ""),
         style: "left: " + x + "px; top: " + y + "px"
       }, [
-        h("div", { class: "bm-head" }, [h("span", { text: titleText }), h("span", { class: "bm-status " + m.state, text: statusLabel })]),
-        sideButton(m, "a"),
-        sideButton(m, "b")
+        h("div", { class: "bm-head" }, [h("span", { text: titleText }), status]),
+        sideRow(m, "a", called),
+        sideRow(m, "b", called)
       ]);
     }
 
+    /* 連線：每一場接到下一輪 */
+    var byCode = {};
+    main.forEach(function (m) { byCode[m.code] = m; });
+
     main.forEach(function (m) {
 
-      var gap = ROW * Math.pow(2, m.round - 1);
-      var y = TOP + (m.slot - 1) * gap + (gap - ROW) / 2;
-      var x = X0 + (m.round - 1) * COL;
+      var p = posOf(m);
 
-      canvas.appendChild(card(m, x, y, "第 " + m.sort + " 場", false));
+      if (!hidden(m)) {
+        canvas.appendChild(card(m, p.x, p.y, "第 " + m.sort + " 場", false));
+      }
 
-      if (m.round < data.rounds && m.slot % 2 === 1) {
-        canvas.appendChild(h("span", { class: "bm-link", style: "left: " + (x + 176) + "px; top: " + (y + CARD / 2) + "px; height: " + gap + "px" }));
-        canvas.appendChild(h("span", { class: "bm-link-out", style: "left: " + (x + 192) + "px; top: " + (y + CARD / 2 + gap / 2) + "px" }));
+      if (m.round < data.rounds && !hidden(m)) {
+
+        var parent = byCode["R" + (m.round + 1) + "-" + Math.ceil(m.slot / 2)];
+        var pp = posOf(parent);
+        var cy = p.y + CARD / 2;
+        var py = pp.y + CARD / 2;
+
+        canvas.appendChild(h("span", { class: "bm-line-h", style: "left: " + (p.x + 176) + "px; top: " + cy + "px; width: 16px" }));
+        canvas.appendChild(h("span", { class: "bm-line-v", style: "left: " + (p.x + 192) + "px; top: " + Math.min(cy, py) + "px; height: " + Math.abs(py - cy) + "px" }));
+        canvas.appendChild(h("span", { class: "bm-line-h", style: "left: " + (p.x + 192) + "px; top: " + py + "px; width: 14px" }));
       }
     });
 
@@ -3380,20 +3407,36 @@
 
     var scroll = h("div", { class: "bracket-scroll" }, [canvas]);
 
-    app.appendChild(scroll);
-    app.appendChild(h("p", { class: "muted small bracket-tip", text: "← 左右滑動看整個對戰表" + (place.length ? "，最右邊是名次賽" : "") + " →" }));
+    var fullBtn = h("button", {
+      class: "pill pill-ghost bracket-full-btn",
+      type: "button",
+      onClick: function () {
+        board.classList.toggle("is-full");
+        document.body.classList.toggle("bracket-full-open", board.classList.contains("is-full"));
+        fullBtn.textContent = board.classList.contains("is-full") ? "✕ 離開全螢幕" : "⛶ 全螢幕";
+      },
+      text: wasFull ? "✕ 離開全螢幕" : "⛶ 全螢幕"
+    });
+
+    var board = h("div", { class: "bracket-board" + (wasFull ? " is-full" : "") }, [
+      h("div", { class: "bracket-board-head" }, [h("strong", { class: "serif", text: data.title }), fullBtn]),
+      scroll
+    ]);
+
+    app.appendChild(board);
 
     scroll.scrollLeft = scrollLeft;
+    scroll.scrollTop = scrollTop;
 
-    /* ----- 最終名次 ----- */
+    /* ----- 名次 ----- */
 
-    var standing = h("section", { class: "section" }, [sectionTitle("最終名次")]);
+    var standing = h("section", { class: "section" }, [sectionTitle("名次")]);
     var medal = { 冠軍: "gold", 亞軍: "silver", 季軍: "bronze" };
 
     data.standings.forEach(function (row) {
       standing.appendChild(h("div", { class: "standing-row" + (row.rank === "冠軍" && row.name ? " champ" : "") }, [
         h("span", { class: "medal medal-" + (medal[row.rank] || "plain"), text: row.rank }),
-        h("strong", { class: "grow", text: row.name || "待定" })
+        h("strong", { class: "grow", text: row.name && row.name !== "—" ? row.name : "" })
       ]));
     });
 

@@ -1664,3 +1664,16 @@
 
 .ck-fee-row .ck-w-rank { flex: 0 0 96px; width: 96px !important; padding-left: 8px; padding-right: 8px; }
 .ck-fee-row .ck-w-price { flex: 0 0 62px; width: 62px !important; padding-left: 8px; padding-right: 8px; }
+
+.ck-import {
+  margin-bottom: 4px;
+}
+
+.ck-import input {
+  flex: 1;
+  min-width: 0;
+}
+
+.ck-import .btn {
+  flex: 0 0 auto;
+}
