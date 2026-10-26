@@ -116,13 +116,14 @@ var RESOURCES = {
 
   teams: {
     table: "teams",
-    order: "team_name ASC",
+    order: "sort_order ASC, team_name ASC",
     hasUpdatedAt: true,
     columns: {
       team_code: { type: "text", max: 50 },
       team_name: { type: "text", required: true, max: 100 },
       team_logo_url: { type: "url" },
       description: { type: "text", max: 2000 },
+      sort_order: { type: "int", min: 0, max: 9999, default: 100 },
       status: { type: "enum", values: ACTIVE_STATUS, default: "active" }
     }
   },

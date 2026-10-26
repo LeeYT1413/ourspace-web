@@ -138,7 +138,7 @@ async function getTeams(env) {
   var results = await env.DB.batch([
     env.DB.prepare(
       "SELECT id, team_name, team_logo_url, description FROM teams " +
-      "WHERE status = 'active' ORDER BY team_name ASC LIMIT 100"
+      "WHERE status = 'active' ORDER BY sort_order ASC, team_name ASC LIMIT 100"
     ),
     /* 戰隊成員：已加入會員、且已經是這個戰隊隊員的人，用他在這個戰隊的暱稱 */
     env.DB.prepare(

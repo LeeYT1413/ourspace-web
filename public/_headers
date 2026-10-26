@@ -1,0 +1,11 @@
+# 靜態檔案快取一天；網址後面有 ?v= 版本號，每次改版換版本號就會立刻重新下載
+/js/*
+  Cache-Control: public, max-age=86400
+/css/*
+  Cache-Control: public, max-age=86400
+/admin/*.js
+  Cache-Control: public, max-age=86400
+/admin/*.css
+  Cache-Control: public, max-age=86400
+/images/*
+  Cache-Control: public, max-age=604800

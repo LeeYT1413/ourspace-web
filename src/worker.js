@@ -22,6 +22,7 @@ import { handleMemberApi } from "./member-api.js";
 import { handleMemberAdminApi } from "./member-admin-api.js";
 import { handleAdsApi } from "./ads-api.js";
 import { handleBracketApi } from "./bracket-api.js";
+import { handleTrackApi } from "./track-api.js";
 import { errorResponse } from "./util.js";
 
 
@@ -50,6 +51,8 @@ export default {
         response = await handleAdminApi(request, url, env);
       } else if (pathname.indexOf("/api/ads/") === 0 || pathname === "/api/referee/ads" || pathname.indexOf("/api/referee/ads/") === 0) {
         response = await handleAdsApi(request, url, env);
+      } else if (pathname === "/api/track") {
+        response = await handleTrackApi(request, env);
       } else if (pathname === "/api/brackets" || pathname.indexOf("/api/brackets/") === 0) {
         response = await handleBracketApi(request, url, env);
       } else if (pathname.indexOf("/api/member/") === 0) {

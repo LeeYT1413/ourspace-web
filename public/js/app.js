@@ -42,7 +42,7 @@
     events: null,
     today: "",
     staff: null,
-    member: null,
+    member: undefined,   /* undefined = 還在載入，null = 沒登入 */
     leagueTimer: null,
     carouselTimer: null,
     selected: [],
@@ -441,6 +441,7 @@
     clearInterval(state.carouselTimer);
     clearInterval(state.bracketTimer);
     document.body.classList.remove("bracket-full-open");
+    trackView(page);
     closeMenu();
     document.body.classList.remove("has-bottom-bar");
     updateAd();
@@ -1379,7 +1380,45 @@
           rows.appendChild(wrap);
         });
 
-        app.appendChild(rows);
+        /* 第 4 名以下：可以左右滑動切換「總排行／季賽」 */
+        var pages = [
+          ["總排行", rows],
+          ["季賽", h("div", { class: "coming-soon" }, [h("strong", { class: "serif", text: "敬請期待" })])]
+        ];
+
+        var tabs = h("div", { class: "rank-dots", role: "tablist" });
+        var track = h("div", { class: "rank-pager" });
+
+        function setActive(index) {
+          Array.prototype.forEach.call(tabs.children, function (tab, i) {
+            tab.classList.toggle("active", i === index);
+            tab.setAttribute("aria-selected", i === index ? "true" : "false");
+          });
+        }
+
+        pages.forEach(function (page, i) {
+
+          tabs.appendChild(h("button", {
+            class: "rank-dot" + (i === 0 ? " active" : ""),
+            type: "button",
+            role: "tab",
+            "aria-label": page[0],
+            "aria-selected": i === 0 ? "true" : "false",
+            onClick: function () {
+              track.scrollTo({ left: track.clientWidth * i, behavior: "smooth" });
+              setActive(i);
+            }
+          }));
+
+          track.appendChild(h("div", { class: "rank-page" }, [page[1]]));
+        });
+
+        track.addEventListener("scroll", function () {
+          setActive(Math.round(track.scrollLeft / Math.max(1, track.clientWidth)));
+        });
+
+        app.appendChild(h("div", { class: "rank-dots-wrap" }, [tabs]));
+        app.appendChild(track);
       })
       .catch(function () {
         clear(app);
@@ -1391,7 +1430,17 @@
   function avatar(url, size) {
 
     if (url) {
-      return h("img", { class: "avatar", src: url, alt: "", width: String(size), height: String(size), style: "width: " + size + "px; height: " + size + "px", loading: "lazy" });
+      var img = h("img", { class: "avatar", src: url, alt: "", width: String(size), height: String(size), style: "width: " + size + "px; height: " + size + "px", loading: "lazy" });
+
+      /* 頭貼網址失效（例如 LINE 換了大頭貼）：改顯示預設圖示 */
+      img.addEventListener("error", function () {
+        var empty = h("span", { class: "avatar avatar-empty", style: "width: " + size + "px; height: " + size + "px", "aria-hidden": "true", text: "◎" });
+        if (img.parentNode) {
+          img.parentNode.replaceChild(empty, img);
+        }
+      });
+
+      return img;
     }
 
     return h("span", { class: "avatar avatar-empty", style: "width: " + size + "px; height: " + size + "px", "aria-hidden": "true", text: "◎" });
@@ -2584,6 +2633,46 @@
 
 
   /* =======================================================
+     瀏覽量紀錄（會員／非會員分開；不含個資）
+  ======================================================= */
+
+  function visitorId() {
+    try {
+      var id = window.localStorage.getItem("os_vid");
+      if (!id) {
+        var bytes = new Uint8Array(12);
+        window.crypto.getRandomValues(bytes);
+        id = Array.prototype.map.call(bytes, function (b) { return ("0" + b.toString(16)).slice(-2); }).join("");
+        window.localStorage.setItem("os_vid", id);
+      }
+      return id;
+    } catch (error) {
+      return "";
+    }
+  }
+
+  function trackView(page) {
+
+    /* 會員狀態還在載入時，等一下再送，避免算錯 */
+    if (state.member === undefined) {
+      setTimeout(function () { trackView(page); }, 800);
+      return;
+    }
+
+    try {
+      var body = JSON.stringify({ page: page, member: state.member ? 1 : 0, vid: visitorId() });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon("/api/track", new Blob([body], { type: "application/json" }));
+      } else {
+        fetch("/api/track", { method: "POST", headers: { "Content-Type": "application/json" }, body: body, keepalive: true });
+      }
+    } catch (error) {
+      /* 紀錄失敗不影響瀏覽 */
+    }
+  }
+
+
+  /* =======================================================
      浮動廣告：貼在畫面下緣置中，左上角 × 可以關掉
      - 首頁不顯示
      - 關掉後：依後台設定
@@ -2755,6 +2844,15 @@
     return value ? String(value).replace(/-/g, "/") + "（" + "日一二三四五六".charAt(new Date(value + "T00:00:00").getDay()) + "）" : "未定日期";
   }
 
+  function bracketLoginBox() {
+    return h("section", { class: "section" }, [
+      h("div", { class: "login-hint" }, [
+        h("span", { class: "grow", text: "登入會員就能建立賽程。" }),
+        h("a", { class: "pill pill-line", href: loginUrl("#brackets"), text: "LINE 登入" })
+      ])
+    ]);
+  }
+
   function notOpenBox() {
     return h("section", { class: "section" }, [
       h("div", { class: "not-open" }, [
@@ -2776,7 +2874,7 @@
         app.appendChild(pageTitle("比賽賽程", "BRACKETS"));
 
         if (!access.allowed) {
-          app.appendChild(notOpenBox());
+          app.appendChild(!access.logged_in ? bracketLoginBox() : notOpenBox());
           return;
         }
 
@@ -2827,15 +2925,14 @@
 
     items.forEach(function (b) {
 
-      var stateText2 = { draft: "草稿", live: "比賽中", done: "已結束" }[b.status];
+      var stateText2 = { draft: "尚未開始", live: "比賽中", done: "已結束" }[b.status];
       var info = b.players + " 人・" + (BRACKET_FORMATS[b.format] || "") +
-        (b.status === "draft" ? "・還沒建立對戰表" : "") +
         (b.champion ? "・冠軍：" + b.champion : "") +
         (tab === "help" && b.owner_name ? "・建立者：" + b.owner_name : "");
 
       var actions = h("div", { class: "row-gap" }, [
-        h("a", { class: "pill pill-red grow", href: b.status === "draft" ? "#bracket-edit/" + b.id : "#b/" + b.share_code, text: b.status === "draft" ? "繼續編輯" : "打開" }),
-        b.status !== "draft" ? h("button", { class: "pill pill-ink-outline grow", type: "button", onClick: function () { copyText(bracketLink(b.share_code)); }, text: "複製連結" }) : null,
+        h("a", { class: "pill pill-red grow", href: "#b/" + b.share_code, text: "打開" }),
+        h("button", { class: "pill pill-ink-outline grow", type: "button", onClick: function () { copyText(bracketLink(b.share_code)); }, text: "複製連結" }),
         tab === "mine" ? h("button", {
           class: "pill pill-danger-outline",
           type: "button",
@@ -2889,10 +2986,6 @@
         }
 
         return bracketApi("GET", "/" + id).then(function (res) {
-          if (res.data.status !== "draft") {
-            window.location.replace("#b/" + res.data.share_code);
-            return;
-          }
           drawBracketForm(res.data);
         });
       })
@@ -2923,6 +3016,8 @@
 
   function drawBracketForm(data) {
 
+    var started = !!data.status && data.status !== "draft";
+
     var form = {
       id: data.id,
       format: data.format || "champ",
@@ -2932,7 +3027,7 @@
 
     clear(app);
 
-    app.appendChild(h("a", { class: "back-link", href: "#brackets", text: "‹ 比賽賽程" }));
+    app.appendChild(h("a", { class: "back-link", href: data.share_code ? "#b/" + data.share_code : "#brackets", text: "‹ " + (data.share_code ? "對戰表" : "比賽賽程") }));
     app.appendChild(pageTitle(form.id ? "編輯賽程" : "建立新賽程", "NEW BRACKET"));
 
     var title = h("input", { type: "text", maxlength: "60", placeholder: "例如：週五朋友盃", "aria-label": "賽程名稱" });
@@ -2970,7 +3065,8 @@
         formatBox.appendChild(h("button", {
           class: "seg-btn" + (form.format === key ? " active" : ""),
           type: "button",
-          onClick: function () { form.format = key; drawFormat(); },
+          disabled: started && form.format !== key,
+          onClick: function () { if (!started) { form.format = key; drawFormat(); } },
           text: BRACKET_FORMATS[key]
         }));
       });
@@ -2979,20 +3075,27 @@
     }
 
     /* 參賽者 */
-    var countLabel = h("span", { class: "label" });
-    var playerList = h("div", { class: "player-list" });
+    var countLabel = h("button", { class: "fold-btn", type: "button", "aria-expanded": "false" });
+    var playerList = h("div", { class: "player-list is-folded" });
+
+    countLabel.addEventListener("click", function () {
+      var open = playerList.classList.toggle("is-folded") === false;
+      countLabel.setAttribute("aria-expanded", open ? "true" : "false");
+      drawPlayers();
+    });
     var addArea = h("textarea", { rows: "3", placeholder: "輸入參賽者名字，一行一個，可以一次貼上很多個", "aria-label": "新增參賽者" });
 
     function drawPlayers() {
 
-      countLabel.textContent = "參賽者（" + form.players.length + " 人）";
+      var open = !playerList.classList.contains("is-folded");
+      countLabel.textContent = "參賽者（" + form.players.length + " 人）" + (open ? " ▴" : " ▾");
       clear(playerList);
 
       form.players.forEach(function (name, i) {
         playerList.appendChild(h("div", { class: "player-row" }, [
           h("span", { class: "num", text: String(i + 1) }),
           h("strong", { class: "grow", text: name }),
-          h("button", {
+          started ? null : h("button", {
             class: "x-btn x-small",
             type: "button",
             "aria-label": "移除 " + name,
@@ -3019,21 +3122,6 @@
 
       addArea.value = "";
       drawPlayers();
-    }
-
-    function shuffle() {
-
-      for (var i = form.players.length - 1; i > 0; i--) {
-        var bytes = new Uint32Array(1);
-        window.crypto.getRandomValues(bytes);
-        var j = bytes[0] % (i + 1);
-        var t = form.players[i];
-        form.players[i] = form.players[j];
-        form.players[j] = t;
-      }
-
-      drawPlayers();
-      toast("已洗牌。", "success");
     }
 
     /* 協助者 */
@@ -3116,54 +3204,26 @@
       };
     }
 
-    var saveBtn = h("button", { class: "pill pill-outline pill-big grow", type: "button", text: "儲存賽程" });
-    var startBtn = h("button", { class: "pill pill-red pill-big grow", type: "button", text: "建立對戰表" });
-
-    function save() {
-      return form.id
-        ? bracketApi("PUT", "/" + form.id, payload())
-        : bracketApi("POST", "", payload()).then(function (res) {
-            form.id = res.id;
-            history.replaceState(null, "", "#bracket-edit/" + res.id);
-            return res;
-          });
-    }
+    var saveBtn = h("button", { class: "pill pill-outline pill-big pill-block", type: "button", text: "儲存" });
 
     saveBtn.addEventListener("click", function () {
 
+      if (!title.value.trim()) {
+        toast(BRACKET_ERRORS.REQUIRED, "error");
+        return;
+      }
+
       saveBtn.disabled = true;
 
-      save().then(function () {
-        toast("已儲存成草稿。確定開賽再按「建立對戰表」。", "success");
-      }).catch(function (error) {
-        toast(bracketError(error, "儲存失敗。"), "error");
-      }).then(function () {
-        saveBtn.disabled = false;
-      });
-    });
-
-    startBtn.addEventListener("click", function () {
-
-      if (form.players.length < 2) {
-        toast(BRACKET_ERRORS.NEED_PLAYERS, "error");
-        return;
-      }
-
-      if (!window.confirm("建立對戰表後，對戰組合就固定了，不能再換對手。確定要建立嗎？")) {
-        return;
-      }
-
-      startBtn.disabled = true;
-
-      save().then(function () {
-        return bracketApi("POST", "/" + form.id + "/start", payload());
-      }).then(function (res) {
-        toast("對戰表建立好了！把連結傳給大家吧。", "success");
-        window.location.hash = "#b/" + res.share_code;
-      }).catch(function (error) {
-        toast(bracketError(error, "建立失敗。"), "error");
-        startBtn.disabled = false;
-      });
+      (form.id ? bracketApi("PUT", "/" + form.id, payload()) : bracketApi("POST", "", payload()))
+        .then(function (res) {
+          toast("已儲存。", "success");
+          window.location.hash = "#b/" + res.share_code;
+        })
+        .catch(function (error) {
+          toast(bracketError(error, "儲存失敗。"), "error");
+          saveBtn.disabled = false;
+        });
     });
 
     app.appendChild(h("section", { class: "section form" }, [
@@ -3174,13 +3234,10 @@
       ]),
       h("div", { class: "field" }, [h("span", { class: "label", text: "賽制" }), formatBox]),
       h("div", { class: "field" }, [
-        h("div", { class: "row-between" }, [
-          countLabel,
-          h("button", { class: "pill pill-gold-solid", type: "button", onClick: shuffle, text: "🔀 洗牌" })
-        ]),
+        countLabel,
         playerList,
-        addArea,
-        h("button", { class: "dash-btn", type: "button", onClick: addPlayers, text: "＋ 加入這些名字" })
+        started ? null : addArea,
+        started ? null : h("button", { class: "dash-btn", type: "button", onClick: addPlayers, text: "＋ 加入這些名字" })
       ]),
       h("div", { class: "field" }, [
         h("span", { class: "label", text: "協助輸入勝負的會員（最多 10 位）" }),
@@ -3188,7 +3245,7 @@
         helperSearch,
         helperResults
       ]),
-      h("div", { class: "row-gap" }, [saveBtn, startBtn])
+      saveBtn
     ]));
 
     drawFormat();
@@ -3238,7 +3295,7 @@
     app.appendChild(h("a", { class: "back-link", href: "#brackets", text: "‹ 比賽賽程" }));
 
     var link = bracketLink(data.share_code);
-    var statusText = { live: "比賽中", done: "已結束" }[data.status] || "";
+    var statusText = { draft: "尚未開始", live: "比賽中", done: "已結束" }[data.status] || "";
 
     var copyId = h("button", {
       class: "copy-id",
@@ -3247,7 +3304,7 @@
       title: "複製賽事 ID",
       onClick: function () {
         if (navigator.clipboard && window.isSecureContext) {
-          navigator.clipboard.writeText(data.share_code).then(function () { toast("已複製賽事 ID：" + data.share_code, "success"); });
+          navigator.clipboard.writeText(data.share_code).then(function () { toast("已複製賽事 ID", "success"); });
         } else {
           window.prompt("賽事 ID", data.share_code);
         }
@@ -3260,10 +3317,41 @@
       h("h1", { class: "bracket-title", text: data.title }),
       h("span", { class: "muted small", text: bracketDate(data.event_date) + (data.start_time ? " " + data.start_time : "") + "・" + data.players + " 人" + (data.owner_name ? "・建立者 " + data.owner_name : "") }),
       h("div", { class: "row-gap bracket-share" }, [
+        data.is_owner && !data.started ? h("button", {
+          class: "pill pill-red",
+          type: "button",
+          onClick: function () {
+            if (!window.confirm("啟動賽程後，就不能再新增參賽者或洗牌。確定要啟動嗎？")) {
+              return;
+            }
+            bracketApi("POST", "/" + data.id + "/start", {})
+              .then(function () { toast("賽程已啟動！", "success"); return reload(true); })
+              .catch(function (error) { toast(bracketError(error, "啟動失敗。"), "error"); });
+          },
+          text: "啟動賽程"
+        }) : null,
         h("button", { class: "pill pill-outline", type: "button", onClick: function () { copyText(link); }, text: "複製連結" }),
         copyId
-      ])
+      ]),
+      data.is_owner ? h("div", { class: "row-gap bracket-owner" }, [
+        h("a", { class: "pill pill-ghost", href: "#bracket-edit/" + data.id, text: "編輯賽程" }),
+        !data.started ? h("button", {
+          class: "pill pill-gold-solid",
+          type: "button",
+          onClick: function () {
+            bracketApi("POST", "/" + data.id + "/shuffle", {})
+              .then(function () { toast("已洗牌。", "success"); return reload(true); })
+              .catch(function (error) { toast(bracketError(error, "洗牌失敗。"), "error"); });
+          },
+          text: "🔀 洗牌"
+        }) : null
+      ]) : null
     ]));
+
+    if (!data.matches.length) {
+      app.appendChild(stateText("至少要有 2 位參賽者才會產生對戰表。"));
+      return;
+    }
 
     /* ----- 樹狀圖（Round 1 的輪空不畫，直接當種子放在 Round 2） ----- */
 
@@ -3354,9 +3442,13 @@
       var waiting = m.state === "wait" || (ready && !m.called);
       var statusLabel = m.state === "done" ? "已結束" : m.state === "bye" ? "輪空晉級" : called ? "比賽中" : "等待中";
 
+      if (!data.started) {
+        statusLabel = m.state === "bye" ? "輪空晉級" : "未開始";
+      }
+
       var status = h("span", { class: "bm-status " + (called ? "live" : m.state === "done" || m.state === "bye" ? "done" : "wait"), text: statusLabel });
 
-      if (data.can_edit && ready) {
+      if (data.can_edit && data.started && ready) {
         status = h("button", {
           class: "bm-status-btn " + (called ? "live" : "wait"),
           type: "button",
@@ -3418,8 +3510,40 @@
       text: wasFull ? "✕ 離開全螢幕" : "⛶ 全螢幕"
     });
 
+    /* 縮放：拉 bar、－、＋、復原 */
+    var zoom = state.bracketZoom || 100;
+    var zoomRange = h("input", { type: "range", min: "40", max: "150", step: "10", "aria-label": "縮放對戰表" });
+    var zoomText = h("span", { class: "zoom-text" });
+    var sizer = h("div", { class: "bracket-sizer" });
+
+    scroll.removeChild(canvas);
+    sizer.appendChild(canvas);
+    scroll.appendChild(sizer);
+
+    function applyZoom(value) {
+      zoom = Math.max(40, Math.min(150, value));
+      state.bracketZoom = zoom;
+      zoomRange.value = String(zoom);
+      zoomText.textContent = zoom + "%";
+      canvas.style.transform = "scale(" + zoom / 100 + ")";
+      sizer.style.width = Math.round(width * zoom / 100) + "px";
+      sizer.style.height = Math.round(height * zoom / 100) + "px";
+    }
+
+    zoomRange.addEventListener("input", function () { applyZoom(Number(zoomRange.value)); });
+
+    var zoomBar = h("div", { class: "zoom-bar" }, [
+      h("button", { class: "zoom-btn", type: "button", "aria-label": "縮小", onClick: function () { applyZoom(zoom - 10); }, text: "－" }),
+      zoomRange,
+      h("button", { class: "zoom-btn", type: "button", "aria-label": "放大", onClick: function () { applyZoom(zoom + 10); }, text: "＋" }),
+      zoomText,
+      h("button", { class: "zoom-reset", type: "button", onClick: function () { applyZoom(100); }, text: "復原" })
+    ]);
+
+    applyZoom(zoom);
+
     var board = h("div", { class: "bracket-board" + (wasFull ? " is-full" : "") }, [
-      h("div", { class: "bracket-board-head" }, [h("strong", { class: "serif", text: data.title }), fullBtn]),
+      h("div", { class: "bracket-board-head" }, [h("strong", { class: "serif", text: data.title }), zoomBar, fullBtn]),
       scroll
     ]);
 
@@ -3451,7 +3575,8 @@
 
   loadSite().then(renderFooter);
 
-  loadAd();
+  /* 廣告等頁面主要內容載入完再抓，不拖慢第一次開啟 */
+  setTimeout(loadAd, 1500);
 
   Promise.all([loadStaff(), loadMember()]).then(function () {
     renderMenu();

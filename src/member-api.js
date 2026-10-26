@@ -693,6 +693,12 @@ async function lineCallback(request, url, env) {
       )
       .bind(lineName, picture, taiwanNow(), user.id)
       .run();
+
+      /* LINE 換了大頭貼：排行榜的頭貼一起更新（舊網址會失效） */
+      await env.DB.prepare("UPDATE rank_stats SET avatar_url = ? WHERE user_id = ?")
+        .bind(picture, user.id)
+        .run()
+        .catch(function () {});
     }
 
     var sessionToken = randomHex(32);

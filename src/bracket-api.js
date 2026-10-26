@@ -5,7 +5,7 @@
 
    誰可以做什麼
    - 看賽程：任何人拿到連結都能看（不用登入）
-   - 建立賽程：先只開放「窩室」戰隊的正式隊員
+   - 建立賽程：登入的會員
    - 輸入勝負：建立者，以及建立者指定的協助者（最多 10 位會員）
    - 每位會員最多 200 筆賽程，超過要先刪除舊的
 
@@ -37,7 +37,7 @@ import { getMember } from "./member-api.js";
 var MAX_BRACKETS = 200;
 var MAX_HELPERS = 10;
 var MAX_PARTICIPANTS = 1024;
-var OPEN_TEAM = "窩室";
+var OPEN_TEAM = "窩室";   /* 會員主檔仍記錄是否為窩室隊員 */
 var FORMATS = ["champ", "top4", "top8"];
 
 
@@ -81,18 +81,9 @@ export async function syncMemberToBracket(env, userId) {
 }
 
 
+/* 所有登入的會員都可以建立賽程 */
 async function isOpenFor(env, member) {
-
-  if (!member || !env.BRACKET_DB) {
-    return false;
-  }
-
-  var row = await env.DB.prepare(
-    "SELECT 1 AS ok FROM member_teams mt INNER JOIN teams t ON t.id = mt.team_id " +
-    "WHERE mt.user_id = ? AND mt.status = 'active' AND t.team_name = ? LIMIT 1"
-  ).bind(member.id, OPEN_TEAM).first();
-
-  return !!row;
+  return !!member && !!env.BRACKET_DB;
 }
 
 
@@ -389,6 +380,10 @@ export async function handleBracketApi(request, url, env) {
       return deleteBracket(env, member, id);
     }
 
+    if (parts[1] === "shuffle" && method === "POST") {
+      return shuffleBracket(env, member, id);
+    }
+
     if (parts[1] === "start" && method === "POST") {
       return startBracket(await parseJsonBody(request), env, member, id);
     }
@@ -414,7 +409,7 @@ async function viewBracket(request, env, code) {
 
   var bracket = await env.BRACKET_DB.prepare(
     "SELECT b.*, m.nickname AS owner_name FROM brackets b LEFT JOIN members m ON m.member_id = b.owner_id " +
-    "WHERE b.share_code = ? AND b.status != 'draft'"
+    "WHERE b.share_code = ?"
   ).bind(code).first();
 
   if (!bracket) {
@@ -442,6 +437,7 @@ async function viewBracket(request, env, code) {
       status: bracket.status,
       owner_name: bracket.owner_name,
       is_owner: !!member && member.id === bracket.owner_id,
+      started: bracket.status !== "draft",
       players: parseNames(bracket.participants).length,
       rounds: rounds,
       matches: resolved.list,
@@ -481,7 +477,7 @@ async function myBrackets(env, member) {
     env.BRACKET_DB.prepare(
       "SELECT b.id, b.share_code, b.title, b.event_date, b.format, b.status, b.participants, b.champion, " +
       "m.nickname AS owner_name FROM brackets b LEFT JOIN members m ON m.member_id = b.owner_id " +
-      "WHERE b.status != 'draft' AND b.owner_id != ? " +
+      "WHERE b.owner_id != ? " +
       "AND EXISTS (SELECT 1 FROM json_each(b.helpers) h WHERE h.value = ?) ORDER BY b.id DESC LIMIT 100"
     ).bind(member.id, member.id)
   ]);
@@ -666,13 +662,17 @@ async function saveDraft(body, env, member, id) {
       return errorResponse("LIMIT_REACHED", 409, { limit: MAX_BRACKETS });
     }
 
+    var shareCode = randomCode(10);
+
     var created = await env.BRACKET_DB.prepare(
       "INSERT INTO brackets (share_code, owner_id, title, event_date, start_time, format, participants, helpers) " +
       "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-    ).bind(randomCode(10), member.id, draft.title, draft.date, draft.time, draft.format,
+    ).bind(shareCode, member.id, draft.title, draft.date, draft.time, draft.format,
       JSON.stringify(draft.names), JSON.stringify(draft.helpers)).run();
 
-    return jsonResponse({ success: true, id: created.meta.last_row_id }, 201);
+    await rebuildMatches(env, created.meta.last_row_id, draft.names, draft.format);
+
+    return jsonResponse({ success: true, id: created.meta.last_row_id, share_code: shareCode }, 201);
   }
 
   var check = await ownBracket(env, member, id);
@@ -681,8 +681,11 @@ async function saveDraft(body, env, member, id) {
     return check.response;
   }
 
-  /* 對戰表建立後，只能改名稱、日期、協助者；參賽者和賽制不能再改 */
+  /* 啟動賽程後，只能改名稱、日期、協助者；參賽者和賽制不能再改 */
   if (check.bracket.status === "draft") {
+
+    await rebuildMatches(env, id, draft.names, draft.format);
+
     await env.BRACKET_DB.prepare(
       "UPDATE brackets SET title = ?, event_date = ?, start_time = ?, format = ?, participants = ?, helpers = ?, " +
       "updated_at = CURRENT_TIMESTAMP WHERE id = ?"
@@ -693,7 +696,61 @@ async function saveDraft(body, env, member, id) {
     ).bind(draft.title, draft.date, draft.time, JSON.stringify(draft.helpers), id).run();
   }
 
-  return jsonResponse({ success: true, id: id });
+  return jsonResponse({ success: true, id: id, share_code: check.bracket.share_code });
+}
+
+
+/* 還沒啟動的賽程：每次儲存或洗牌，都照名單重新排對戰表 */
+async function rebuildMatches(env, id, names, format) {
+
+  var statements = [env.BRACKET_DB.prepare("DELETE FROM bracket_matches WHERE bracket_id = ?").bind(id)];
+
+  if (names.length >= 2) {
+
+    var built = buildMatches(names, format);
+    var statement = env.BRACKET_DB.prepare(
+      "INSERT INTO bracket_matches (bracket_id, code, round, slot, sort, title, a_name, b_name, a_from, b_from) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    );
+
+    built.matches.forEach(function (m) {
+      statements.push(statement.bind(id, m.code, m.round, m.slot, m.sort, m.title, m.a_name, m.b_name, m.a_from, m.b_from));
+    });
+  }
+
+  await env.BRACKET_DB.batch(statements);
+}
+
+
+async function shuffleBracket(env, member, id) {
+
+  var check = await ownBracket(env, member, id);
+
+  if (check.response) {
+    return check.response;
+  }
+
+  if (check.bracket.status !== "draft") {
+    return errorResponse("ALREADY_STARTED", 409);
+  }
+
+  var names = parseNames(check.bracket.participants);
+
+  for (var i = names.length - 1; i > 0; i--) {
+    var bytes = new Uint32Array(1);
+    crypto.getRandomValues(bytes);
+    var j = bytes[0] % (i + 1);
+    var t = names[i];
+    names[i] = names[j];
+    names[j] = t;
+  }
+
+  await env.BRACKET_DB.prepare("UPDATE brackets SET participants = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+    .bind(JSON.stringify(names), id).run();
+
+  await rebuildMatches(env, id, names, check.bracket.format);
+
+  return jsonResponse({ success: true });
 }
 
 
@@ -717,16 +774,6 @@ async function deleteBracket(env, member, id) {
 
 async function startBracket(body, env, member, id) {
 
-  /* 開賽前先存一次畫面上最新的內容 */
-  if (body && body.title) {
-
-    var saved = await saveDraft(body, env, member, id);
-
-    if (saved.status >= 400) {
-      return saved;
-    }
-  }
-
   var check = await ownBracket(env, member, id);
 
   if (check.response) {
@@ -745,23 +792,15 @@ async function startBracket(body, env, member, id) {
     return errorResponse("NEED_PLAYERS", 400);
   }
 
-  var built = buildMatches(names, bracket.format);
-  var statement = env.BRACKET_DB.prepare(
-    "INSERT INTO bracket_matches (bracket_id, code, round, slot, sort, title, a_name, b_name, a_from, b_from) " +
-    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-  );
+  var has = await env.BRACKET_DB.prepare("SELECT COUNT(*) AS n FROM bracket_matches WHERE bracket_id = ?").bind(id).first();
 
-  var statements = [env.BRACKET_DB.prepare("DELETE FROM bracket_matches WHERE bracket_id = ?").bind(id)];
+  if (!has || !Number(has.n)) {
+    await rebuildMatches(env, id, names, bracket.format);
+  }
 
-  built.matches.forEach(function (m) {
-    statements.push(statement.bind(id, m.code, m.round, m.slot, m.sort, m.title, m.a_name, m.b_name, m.a_from, m.b_from));
-  });
-
-  statements.push(env.BRACKET_DB.prepare(
+  await env.BRACKET_DB.prepare(
     "UPDATE brackets SET status = 'live', started_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-  ).bind(taiwanNow(), id));
-
-  await env.BRACKET_DB.batch(statements);
+  ).bind(taiwanNow(), id).run();
 
   return jsonResponse({ success: true, share_code: bracket.share_code });
 }
@@ -773,8 +812,12 @@ async function setResult(body, env, member, id) {
 
   var bracket = await env.BRACKET_DB.prepare("SELECT * FROM brackets WHERE id = ?").bind(id).first();
 
-  if (!bracket || bracket.status === "draft") {
+  if (!bracket) {
     return errorResponse("NOT_FOUND", 404);
+  }
+
+  if (bracket.status === "draft") {
+    return errorResponse("NOT_STARTED", 409);
   }
 
   if (bracket.owner_id !== member.id && parseIds(bracket.helpers).indexOf(member.id) === -1) {
@@ -836,8 +879,12 @@ async function setCalled(body, env, member, id) {
 
   var bracket = await env.BRACKET_DB.prepare("SELECT * FROM brackets WHERE id = ?").bind(id).first();
 
-  if (!bracket || bracket.status === "draft") {
+  if (!bracket) {
     return errorResponse("NOT_FOUND", 404);
+  }
+
+  if (bracket.status === "draft") {
+    return errorResponse("NOT_STARTED", 409);
   }
 
   if (bracket.owner_id !== member.id && parseIds(bracket.helpers).indexOf(member.id) === -1) {

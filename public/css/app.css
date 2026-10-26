@@ -3200,3 +3200,205 @@ button.bm-tag {
 .bracket-full-open .ad-float {
   display: none;
 }
+
+/* ----- 比賽賽程 v3 ----- */
+
+.fold-btn {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 14px;
+  color: var(--paper);
+  background: var(--night-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+}
+
+/* 展開時最多顯示 10 位的高度，其他用捲軸 */
+.player-list {
+  max-height: 440px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.player-list.is-folded {
+  display: none;
+}
+
+.bracket-owner {
+  margin-top: 8px;
+}
+
+.bracket-owner .pill {
+  min-height: 38px;
+  font-size: 14px;
+}
+
+.bracket-sizer {
+  position: relative;
+}
+
+.bracket-sizer .bracket-canvas {
+  transform-origin: 0 0;
+}
+
+.bracket-board-head {
+  gap: 10px;
+}
+
+.zoom-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.zoom-bar input[type="range"] {
+  width: 110px;
+  min-height: 0;
+  padding: 0;
+  accent-color: var(--gold);
+  background: transparent;
+  border: 0;
+}
+
+.zoom-btn,
+.zoom-reset {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  color: var(--paper);
+  background: var(--night-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.zoom-text {
+  min-width: 38px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+@media (max-width: 420px) {
+  .zoom-bar input[type="range"] {
+    width: 70px;
+  }
+
+  .zoom-text {
+    display: none;
+  }
+}
+
+/* ----- 陀螺爭霸：總排行／季賽 左右滑動 ----- */
+
+.rank-tabs-wrap {
+  padding-bottom: 0;
+}
+
+.rank-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--night-2);
+  border-radius: 999px;
+}
+
+.rank-tab {
+  flex: 1;
+  min-height: 40px;
+  color: var(--paper);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+.rank-tab.active {
+  background: var(--shu);
+}
+
+.rank-pager {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.rank-pager::-webkit-scrollbar {
+  display: none;
+}
+
+.rank-page {
+  flex: 0 0 100%;
+  min-width: 0;
+  scroll-snap-align: start;
+}
+
+.coming-soon {
+  margin: 16px;
+  padding: 48px 16px;
+  text-align: center;
+  background: var(--night-2);
+  border: 1px dashed var(--line-strong);
+  border-radius: 18px;
+}
+
+.coming-soon strong {
+  font-size: 24px;
+  letter-spacing: 6px;
+}
+
+
+/* 總排行／季賽：圓點切換（目前頁是金色長條） */
+.rank-dots-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 6px 16px 10px;
+}
+
+.rank-dots {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rank-dot {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.rank-dot::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #6B6F78;
+  transition: width 0.2s ease, background 0.2s ease;
+}
+
+.rank-dot.active {
+  width: 40px;
+}
+
+.rank-dot.active::before {
+  width: 32px;
+  background: var(--gold);
+}

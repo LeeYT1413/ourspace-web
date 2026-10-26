@@ -160,6 +160,7 @@
       endpoint: "/api/admin/teams",
       refreshLookups: true,
       columns: [
+        { label: "排序", value: function (r) { return r.sort_order === undefined ? "" : String(r.sort_order); } },
         { label: "隊名", value: function (r) { return r.team_name; } },
         { label: "代碼", value: function (r) { return r.team_code || ""; } },
         { label: "狀態", value: function (r) { return enumLabel("activeStatus", r.status); }, badge: "status" }
@@ -168,6 +169,7 @@
         { name: "team_name", label: "隊名", type: "text", required: true },
         { name: "team_code", label: "戰隊代碼", type: "text", half: true, placeholder: "選填" },
         { name: "status", label: "狀態", type: "select", options: "activeStatus", default: "active", half: true },
+        { name: "sort_order", label: "顯示順序（數字小的排前面）", type: "number", default: "100", half: true },
         { name: "team_logo_url", label: "隊徽圖片網址", type: "url" },
         { name: "description", label: "介紹", type: "textarea" }
       ]
