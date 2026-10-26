@@ -3472,12 +3472,48 @@
     var byCode = {};
     main.forEach(function (m) { byCode[m.code] = m; });
 
+    /*
+      場次編號（照實際上場順序，從第 1 場開始、不跳號；輪空不編號）
+      1. Round 1 的預賽
+      2. 每一輪裡，雙方一開始就確定的場次（種子對種子）先排
+      3. 再排要等前一場結果的場次
+      名次賽：5～8 名排位接在準決賽後面；第 5～8 名、季軍戰排在決賽前面
+    */
+    var matchNo = {};
+
+    (function () {
+
+      function seedOnly(m) {
+        if (m.round !== 2) {
+          return false;
+        }
+        var a = byCode[m.a_from.slice(2)];
+        var b = byCode[m.b_from.slice(2)];
+        return !!a && !!b && hidden(a) && hidden(b);
+      }
+
+      var placeKey = { P1: [data.rounds - 1, 2], P2: [data.rounds - 1, 2], P5: [data.rounds, -3], P7: [data.rounds, -2], T3: [data.rounds, -1] };
+
+      var order = data.matches.filter(function (m) { return !hidden(m); }).map(function (m) {
+        var key = m.code.charAt(0) === "R" ? [m.round, seedOnly(m) ? 0 : 1] : (placeKey[m.code] || [data.rounds, -1]);
+        return { code: m.code, key: key, slot: m.slot };
+      });
+
+      order.sort(function (x, y) {
+        return x.key[0] - y.key[0] || x.key[1] - y.key[1] || x.slot - y.slot;
+      });
+
+      order.forEach(function (item, i) {
+        matchNo[item.code] = i + 1;
+      });
+    })();
+
     main.forEach(function (m) {
 
       var p = posOf(m);
 
       if (!hidden(m)) {
-        canvas.appendChild(card(m, p.x, p.y, "第 " + m.sort + " 場", false));
+        canvas.appendChild(card(m, p.x, p.y, "第 " + matchNo[m.code] + " 場", false));
       }
 
       if (m.round < data.rounds && !hidden(m)) {
@@ -3494,7 +3530,7 @@
     });
 
     place.forEach(function (m, i) {
-      canvas.appendChild(card(m, placeX, TOP + i * ROW, m.title, true));
+      canvas.appendChild(card(m, placeX, TOP + i * ROW, "第 " + matchNo[m.code] + " 場・" + m.title, true));
     });
 
     var scroll = h("div", { class: "bracket-scroll" }, [canvas]);
