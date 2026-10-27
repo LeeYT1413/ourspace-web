@@ -3290,6 +3290,11 @@
     var scrollTop = oldScroll ? oldScroll.scrollTop : 0;
     var wasFull = !!app.querySelector(".bracket-board.is-full");
 
+    /* 重畫時保留頁面位置，不要跳回頁首 */
+    var pageY = window.scrollY;
+    var keepHeight = app.offsetHeight;
+
+    app.style.minHeight = keepHeight + "px";
     clear(app);
 
     app.appendChild(h("a", { class: "back-link", href: "#brackets", text: "‹ 比賽賽程" }));
@@ -3355,7 +3360,14 @@
 
     /* ----- 樹狀圖（Round 1 的輪空不畫，直接當種子放在 Round 2） ----- */
 
-    var COL = 206, CARD = 96, ROW = 108, TOP = 30, X0 = 16;
+    /* 暱稱超過五個字（不算「號碼-」）：對戰框加高，暱稱用兩行顯示 */
+    var longName = data.matches.some(function (m) {
+      return [m.a, m.b].some(function (name) {
+        return name && String(name).replace(/^\s*\d+\s*-\s*/, "").length > 5;
+      });
+    });
+
+    var COL = 206, CARD = longName ? 136 : 96, ROW = longName ? 150 : 108, TOP = 30, X0 = 16;
     var main = data.matches.filter(function (m) { return m.code.charAt(0) === "R"; });
     var place = data.matches.filter(function (m) { return m.code.charAt(0) !== "R"; });
     var firstCount = main.filter(function (m) { return m.round === 1; }).length;
@@ -3387,6 +3399,7 @@
     function send(path, body) {
 
       state.bracketBusy = true;
+      state.bracketFocus = body.code;
 
       return bracketApi("POST", "/" + data.id + path, body)
         .then(function () { return reload(true); })
@@ -3459,8 +3472,9 @@
       }
 
       return h("div", {
-        class: "bm-card" + (isPlace ? " place" : "") + (waiting ? " waiting" : "") + (called ? " live" : ""),
-        style: "left: " + x + "px; top: " + y + "px"
+        class: "bm-card" + (isPlace ? " place" : "") + (waiting ? " waiting" : "") + (called ? " live" : "") + (longName ? " tall" : ""),
+        style: "left: " + x + "px; top: " + y + "px",
+        "data-code": m.code
       }, [
         h("div", { class: "bm-head" }, [h("span", { text: titleText }), status]),
         sideRow(m, "a", called),
@@ -3602,6 +3616,18 @@
 
     app.appendChild(standing);
     document.title = data.title + "｜比賽賽程｜窩室 OURSPACE";
+
+    /* 回到原本的位置，並把焦點放回剛剛操作的那一場 */
+    app.style.minHeight = "";
+    window.scrollTo(0, pageY);
+
+    if (state.bracketFocus) {
+      var target = app.querySelector('.bm-card[data-code="' + state.bracketFocus + '"] button');
+      if (target) {
+        target.focus({ preventScroll: true });
+      }
+      state.bracketFocus = null;
+    }
   }
 
 

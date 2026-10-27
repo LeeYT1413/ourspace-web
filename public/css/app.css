@@ -3402,3 +3402,19 @@ button.bm-tag {
   width: 32px;
   background: var(--gold);
 }
+
+/* 對戰框：長暱稱用兩行 */
+.bm-card.tall .bm-side {
+  height: 58px;
+  align-items: center;
+}
+
+.bm-card.tall .bm-name {
+  white-space: normal;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
