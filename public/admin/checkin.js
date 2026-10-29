@@ -1855,6 +1855,45 @@
         });
     }
 
+    /* 一次加入多位官網選手：依序新增報名，加入後直接勾選報到，按「儲存」完成 */
+    function addPlayers(list) {
+
+      if (!list.length) {
+        return;
+      }
+
+      var added = [];
+      var chain = Promise.resolve();
+
+      list.forEach(function (player) {
+        var name = player.nickname || player.player_name;
+        chain = chain.then(function () {
+          return api("POST", "/events/" + ck.eventId + "/entries", { nickname: name, player_id: player.id })
+            .then(function (response) {
+              ck.entries.push(response.data);
+              added.push(response.data);
+            })
+            .catch(function (error) {
+              toast(name + "：" + errorText(error), "error");
+            });
+        });
+      });
+
+      chain.then(function () {
+
+        if (!added.length) {
+          return;
+        }
+
+        added.forEach(function (entry) {
+          ck.picked.push({ id: entry.id, check: true, judge: false, waived: false, no: null });
+        });
+
+        toast("已加入 " + added.length + " 位，確認號碼後按「儲存」完成報到。", "success");
+        drawResults();
+      });
+    }
+
     function drawResults() {
 
       clear(results);
@@ -1895,18 +1934,49 @@
             existing[entry.nickname.toLowerCase()] = true;
           });
 
-          (response.data || []).forEach(function (player) {
+          var candidates = (response.data || []).filter(function (player) {
+            var name = player.nickname || player.player_name;
+            return !existing[name.toLowerCase()];
+          });
+
+          if (!candidates.length) {
+            return;
+          }
+
+          /* 官網選手：可以勾選多位，一次加入 */
+          var picks = {};
+          var batchBtn = button("", "btn btn-gold btn-block ck-player-batch", function () {
+            addPlayers(candidates.filter(function (p) { return picks[p.id]; }));
+          });
+
+          function drawBatch() {
+            var n = Object.keys(picks).length;
+            batchBtn.textContent = n ? "加入選取的官網選手（" + n + " 位）" : "勾選要加入的官網選手";
+            batchBtn.disabled = !n;
+          }
+
+          candidates.forEach(function (player) {
 
             var name = player.nickname || player.player_name;
+            var row = button("", "ck-player-add", function () {
+              if (picks[player.id]) {
+                delete picks[player.id];
+              } else {
+                picks[player.id] = true;
+              }
+              row.classList.toggle("on", !!picks[player.id]);
+              row.setAttribute("aria-pressed", picks[player.id] ? "true" : "false");
+              drawBatch();
+            });
 
-            if (existing[name.toLowerCase()]) {
-              return;
-            }
-
-            playerBox.appendChild(button("＋ 官網選手：" + name + (player.team_name ? "・" + player.team_name : ""), "ck-player-add", function () {
-              addEntry(name, player.id);
-            }));
+            row.setAttribute("aria-pressed", "false");
+            row.appendChild(el("span", "ck-player-check", "✓"));
+            row.appendChild(el("span", null, "官網選手：" + name + (player.team_name ? "・" + player.team_name : "")));
+            playerBox.appendChild(row);
           });
+
+          drawBatch();
+          playerBox.appendChild(batchBtn);
         })
         .catch(function () {
           /* 找不到選手資料不影響報到 */

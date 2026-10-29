@@ -1677,3 +1677,41 @@
 .ck-import .btn {
   flex: 0 0 auto;
 }
+
+/* 官網選手：勾選多位一次加入 */
+.ck-player-add {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+
+.ck-player-check {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: transparent;
+  border: 2px solid var(--line-bright);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.ck-player-add.on {
+  border-style: solid;
+  border-color: var(--gold);
+  background: rgba(217, 164, 65, 0.12);
+}
+
+.ck-player-add.on .ck-player-check {
+  color: var(--ink);
+  background: var(--gold);
+  border-color: var(--gold);
+}
+
+.ck-player-batch {
+  margin-top: 6px;
+}

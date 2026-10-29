@@ -1779,7 +1779,7 @@ h2 {
 .toast {
   position: fixed;
   left: 50%;
-  bottom: calc(150px + env(safe-area-inset-bottom, 0px));
+  top: calc(80px + env(safe-area-inset-top, 0px));
   z-index: 90;
 
   max-width: calc(100% - 32px);
@@ -3417,4 +3417,67 @@ button.bm-tag {
   -webkit-box-orient: vertical;
   overflow: hidden;
   overflow-wrap: anywhere;
+}
+
+/* 建立賽程：勾選多位裁判 */
+.pick-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  color: var(--paper);
+  background: var(--night-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.pick-toggle .grow strong,
+.pick-toggle .grow span {
+  display: block;
+}
+
+.pick-check {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: transparent;
+  border: 2px solid var(--line-strong);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.pick-toggle.on {
+  border-color: var(--gold);
+  background: rgba(217, 164, 65, 0.12);
+}
+
+.pick-toggle.on .pick-check {
+  color: var(--night);
+  background: var(--gold);
+  border-color: var(--gold);
+}
+
+.pick-toggle.is-added {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.pick-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.date-row .time-field {
+  width: 120px;
+  flex: 0 0 120px;
+  text-align: center;
 }

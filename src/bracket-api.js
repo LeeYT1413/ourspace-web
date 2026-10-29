@@ -182,6 +182,14 @@ export function buildMatches(names, format) {
 }
 
 
+/* 賽程有任何變動就更新版本（精確到毫秒），對戰表只要比對版本就知道要不要重抓 */
+async function touch(env, id) {
+  await env.BRACKET_DB.prepare("UPDATE brackets SET updated_at = ? WHERE id = ?")
+    .bind(new Date().toISOString(), id)
+    .run();
+}
+
+
 var BYE = { bye: true };
 var PENDING = { pending: true };
 
@@ -312,7 +320,7 @@ export async function handleBracketApi(request, url, env) {
   }
 
   if (parts[0] === "view" && parts[1] && method === "GET") {
-    return viewBracket(request, env, parts[1]);
+    return viewBracket(request, env, parts[1], url.searchParams.get("since") || "");
   }
 
   if (method !== "GET" && request.headers.get("X-OurSpace-Member") !== "1") {
@@ -401,10 +409,24 @@ export async function handleBracketApi(request, url, env) {
    看賽程（公開）
 ========================================================= */
 
-async function viewBracket(request, env, code) {
+async function viewBracket(request, env, code, since) {
 
   if (!/^[A-Za-z0-9]{6,20}$/.test(code)) {
     return errorResponse("NOT_FOUND", 404);
+  }
+
+  /* 先問有沒有變動：只讀 1 筆，版本一樣就不用重抓整張對戰表 */
+  if (since) {
+
+    var head = await env.BRACKET_DB.prepare("SELECT updated_at FROM brackets WHERE share_code = ?").bind(code).first();
+
+    if (!head) {
+      return errorResponse("NOT_FOUND", 404);
+    }
+
+    if (String(head.updated_at) === since) {
+      return jsonResponse({ success: true, unchanged: true }, 200, 0);
+    }
   }
 
   var bracket = await env.BRACKET_DB.prepare(
@@ -435,6 +457,7 @@ async function viewBracket(request, env, code) {
       start_time: bracket.start_time,
       format: bracket.format,
       status: bracket.status,
+      version: String(bracket.updated_at),
       owner_name: bracket.owner_name,
       is_owner: !!member && member.id === bracket.owner_id,
       started: bracket.status !== "draft",
@@ -514,7 +537,7 @@ async function searchMembers(url, env, member) {
     "SELECT u.id, u.nickname, u.phone, t.team_name FROM users u LEFT JOIN teams t ON t.id = u.primary_team_id " +
     "WHERE u.status = 'active' AND u.nickname IS NOT NULL AND u.id != ? AND (u.nickname LIKE ? ESCAPE '\\' " +
     (digits.length >= 3 ? "OR replace(replace(u.phone, '-', ''), ' ', '') LIKE ? " : "") +
-    ") ORDER BY u.nickname LIMIT 8"
+    ") ORDER BY u.nickname LIMIT 30"
   );
 
   var rows = await (digits.length >= 3
@@ -671,6 +694,7 @@ async function saveDraft(body, env, member, id) {
       JSON.stringify(draft.names), JSON.stringify(draft.helpers)).run();
 
     await rebuildMatches(env, created.meta.last_row_id, draft.names, draft.format);
+    await touch(env, created.meta.last_row_id);
 
     return jsonResponse({ success: true, id: created.meta.last_row_id, share_code: shareCode }, 201);
   }
@@ -695,6 +719,8 @@ async function saveDraft(body, env, member, id) {
       "UPDATE brackets SET title = ?, event_date = ?, start_time = ?, helpers = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
     ).bind(draft.title, draft.date, draft.time, JSON.stringify(draft.helpers), id).run();
   }
+
+  await touch(env, id);
 
   return jsonResponse({ success: true, id: id, share_code: check.bracket.share_code });
 }
@@ -749,6 +775,7 @@ async function shuffleBracket(env, member, id) {
     .bind(JSON.stringify(names), id).run();
 
   await rebuildMatches(env, id, names, check.bracket.format);
+  await touch(env, id);
 
   return jsonResponse({ success: true });
 }
@@ -801,6 +828,8 @@ async function startBracket(body, env, member, id) {
   await env.BRACKET_DB.prepare(
     "UPDATE brackets SET status = 'live', started_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
   ).bind(taiwanNow(), id).run();
+
+  await touch(env, id);
 
   return jsonResponse({ success: true, share_code: bracket.share_code });
 }
@@ -868,6 +897,8 @@ async function setResult(body, env, member, id) {
     "UPDATE brackets SET status = ?, champion = ?, finished_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
   ).bind(finished ? "done" : "live", champName, finished ? taiwanNow() : null, id).run();
 
+  await touch(env, id);
+
   return jsonResponse({ success: true });
 }
 
@@ -894,6 +925,8 @@ async function setCalled(body, env, member, id) {
   await env.BRACKET_DB.prepare(
     "UPDATE bracket_matches SET called = ?, updated_at = ? WHERE bracket_id = ? AND code = ?"
   ).bind(body.called ? 1 : 0, taiwanNow(), id, cleanText(body.code)).run();
+
+  await touch(env, id);
 
   return jsonResponse({ success: true });
 }

@@ -24,10 +24,11 @@ import { handleAdsApi } from "./ads-api.js";
 import { handleBracketApi } from "./bracket-api.js";
 import { handleTrackApi } from "./track-api.js";
 import { errorResponse } from "./util.js";
+import { withEdgeCache } from "./edge-cache.js";
 
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
 
     var url = new URL(request.url);
     var pathname = url.pathname;
@@ -43,35 +44,9 @@ export default {
 
     try {
 
-      var response = null;
-
-      if (pathname.indexOf("/api/auth/") === 0) {
-        response = await handleAuthApi(request, url, env);
-      } else if (pathname.indexOf("/api/admin/") === 0) {
-        response = await handleAdminApi(request, url, env);
-      } else if (pathname.indexOf("/api/ads/") === 0 || pathname === "/api/referee/ads" || pathname.indexOf("/api/referee/ads/") === 0) {
-        response = await handleAdsApi(request, url, env);
-      } else if (pathname === "/api/track") {
-        response = await handleTrackApi(request, env);
-      } else if (pathname === "/api/brackets" || pathname.indexOf("/api/brackets/") === 0) {
-        response = await handleBracketApi(request, url, env);
-      } else if (pathname.indexOf("/api/member/") === 0) {
-        response = await handleMemberApi(request, url, env);
-      } else if (pathname.indexOf("/api/referee/members/") === 0) {
-        response = await handleMemberAdminApi(request, url, env);
-      } else if (
-        pathname.indexOf("/api/referee/checkin/") === 0 ||
-        pathname === "/api/referee/checkin" ||
-        pathname.indexOf("/api/checkin/") === 0
-      ) {
-        response = await handleCheckinApi(request, url, env);
-      } else if (pathname.indexOf("/api/referee/") === 0) {
-        response = await handleRefereeApi(request, url, env);
-      } else {
-        response = await handlePublicApi(request, url, env);
-      }
-
-      return response || errorResponse("API_NOT_FOUND", 404);
+      return await withEdgeCache(request, url, ctx, function () {
+        return route(request, url, env);
+      });
 
     } catch (error) {
 
@@ -88,3 +63,38 @@ export default {
 
   }
 };
+
+
+async function route(request, url, env) {
+
+  var pathname = url.pathname;
+  var response = null;
+
+  if (pathname.indexOf("/api/auth/") === 0) {
+    response = await handleAuthApi(request, url, env);
+  } else if (pathname.indexOf("/api/admin/") === 0) {
+    response = await handleAdminApi(request, url, env);
+  } else if (pathname.indexOf("/api/ads/") === 0 || pathname === "/api/referee/ads" || pathname.indexOf("/api/referee/ads/") === 0) {
+    response = await handleAdsApi(request, url, env);
+  } else if (pathname === "/api/track") {
+    response = await handleTrackApi(request, env);
+  } else if (pathname === "/api/brackets" || pathname.indexOf("/api/brackets/") === 0) {
+    response = await handleBracketApi(request, url, env);
+  } else if (pathname.indexOf("/api/member/") === 0) {
+    response = await handleMemberApi(request, url, env);
+  } else if (pathname.indexOf("/api/referee/members/") === 0) {
+    response = await handleMemberAdminApi(request, url, env);
+  } else if (
+    pathname.indexOf("/api/referee/checkin/") === 0 ||
+    pathname === "/api/referee/checkin" ||
+    pathname.indexOf("/api/checkin/") === 0
+  ) {
+    response = await handleCheckinApi(request, url, env);
+  } else if (pathname.indexOf("/api/referee/") === 0) {
+    response = await handleRefereeApi(request, url, env);
+  } else {
+    response = await handlePublicApi(request, url, env);
+  }
+
+  return response || errorResponse("API_NOT_FOUND", 404);
+}

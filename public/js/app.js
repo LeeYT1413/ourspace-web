@@ -1342,8 +1342,8 @@
           ]));
         });
 
-        app.appendChild(h("section", { class: "section" }, [podium]));
-        app.appendChild(detail);
+        /* 第一頁（總排行）：頒獎台 + 最強三場 + 第 4 名以下 */
+        var overall = h("div", { class: "rank-overall" }, [h("section", { class: "section" }, [podium]), detail]);
 
         var rows = h("section", { class: "section rank-list" });
 
@@ -1380,9 +1380,11 @@
           rows.appendChild(wrap);
         });
 
-        /* 第 4 名以下：可以左右滑動切換「總排行／季賽」 */
+        overall.appendChild(rows);
+
+        /* 整個排行榜（含前三名）可以左右滑動切換「總排行／季賽」 */
         var pages = [
-          ["總排行", rows],
+          ["總排行", overall],
           ["季賽", h("div", { class: "coming-soon" }, [h("strong", { class: "serif", text: "敬請期待" })])]
         ];
 
@@ -2807,8 +2809,8 @@
   var BRACKET_ERRORS = {
     LIMIT_REACHED: "已達 200 筆上限，請先刪除舊的賽程。",
     NEED_PLAYERS: "至少要有 2 位參賽者才能建立對戰表。",
-    TOO_MANY_HELPERS: "協助者最多 10 位。",
-    HELPER_NOT_FOUND: "找不到其中一位協助者，請重新選擇。",
+    TOO_MANY_HELPERS: "裁判最多 10 位。",
+    HELPER_NOT_FOUND: "找不到其中一位裁判，請重新選擇。",
     DEPENDENT_DONE: "後面接著的場次已經有結果，請先取消後面的結果再改。",
     NOT_PLAYABLE: "這場還不能輸入結果。",
     ALREADY_STARTED: "對戰表已經建立了。",
@@ -2905,7 +2907,7 @@
 
     var seg = h("div", { class: "seg" });
 
-    [["mine", "我建立的"], ["help", "我協助的"]].forEach(function (t) {
+    [["mine", "我建立的"], ["help", "我當裁判的"]].forEach(function (t) {
       seg.appendChild(h("button", {
         class: "seg-btn" + (tab === t[0] ? " active" : ""),
         type: "button",
@@ -2920,7 +2922,7 @@
     var items = tab === "mine" ? res.mine : res.helping;
 
     if (!items.length) {
-      list.appendChild(stateText(tab === "mine" ? "還沒有建立賽程。" : "還沒有人邀請你協助。"));
+      list.appendChild(stateText(tab === "mine" ? "還沒有建立賽程。" : "還沒有人邀請你當裁判。"));
     }
 
     items.forEach(function (b) {
@@ -3036,22 +3038,13 @@
     /* 日期 + 時間（24 小時制、每 10 分鐘）；新增時預設今天、現在時間往前取整 10 分 */
     var now = new Date(Date.now() + (8 * 60 + new Date().getTimezoneOffset()) * 60000);
     var dateInput = h("input", { type: "date", "aria-label": "日期" });
-    var timeInput = h("select", { class: "select time-select", "aria-label": "時間（24 小時制）" });
     var defaultTime = pad2(now.getHours()) + ":" + pad2(Math.floor(now.getMinutes() / 10) * 10);
     var timeValue = data.id ? (data.start_time || "") : defaultTime;
 
     dateInput.value = data.id ? (data.event_date || "") : now.getFullYear() + "-" + pad2(now.getMonth() + 1) + "-" + pad2(now.getDate());
 
-    timeInput.appendChild(h("option", { value: "", text: "時間" }));
-
-    for (var hh = 0; hh < 24; hh++) {
-      for (var mm = 0; mm < 60; mm += 10) {
-        var t = pad2(hh) + ":" + pad2(mm);
-        var option = h("option", { value: t, text: t });
-        option.selected = t === timeValue;
-        timeInput.appendChild(option);
-      }
-    }
+    /* 可以直接打數字，也可以用滾輪選 */
+    var timeInput = window.OurSpaceTimeInput(timeValue, { empty: "時間", label: "時間（24 小時制）", className: "time-field" });
 
     /* 賽制 */
     var formatBox = h("div", { class: "seg seg-inline" });
@@ -3127,7 +3120,7 @@
     /* 協助者 */
     var helperChips = h("div", { class: "chip-list" });
 
-    var helperSearch = h("input", { type: "search", placeholder: "搜尋會員暱稱或電話末三碼", "aria-label": "搜尋協助者" });
+    var helperSearch = h("input", { type: "search", placeholder: "搜尋會員暱稱或電話末三碼", "aria-label": "搜尋裁判" });
     var helperResults = h("div", { class: "pick-results" });
     var searchTimer = null;
 
@@ -3161,32 +3154,66 @@
 
           clear(helperResults);
 
+          /* 可以勾選多位，一次加入 */
+          var picks = [];
+          var batchBtn = h("button", { class: "pill pill-red pill-block", type: "button" });
+
+          function drawBatch() {
+            var room = 10 - form.helpers.length;
+            batchBtn.textContent = picks.length ? "加入選取的裁判（" + picks.length + " 位）" : "勾選要加入的裁判";
+            batchBtn.disabled = !picks.length || picks.length > room;
+            if (picks.length > room) {
+              batchBtn.textContent = "最多再加 " + room + " 位";
+            }
+          }
+
+          batchBtn.addEventListener("click", function () {
+            picks.forEach(function (m) {
+              form.helpers.push({ id: m.id, nickname: m.nickname });
+            });
+            helperSearch.value = "";
+            clear(helperResults);
+            drawHelpers();
+          });
+
           (res.data || []).forEach(function (m) {
 
             var added = form.helpers.some(function (x) { return x.id === m.id; });
 
-            helperResults.appendChild(h("div", { class: "pick-row" }, [
+            var row = h("button", {
+              class: "pick-row pick-toggle" + (added ? " is-added" : ""),
+              type: "button",
+              disabled: added,
+              "aria-pressed": "false"
+            }, [
+              h("span", { class: "pick-check", "aria-hidden": "true", text: "✓" }),
               h("span", { class: "grow" }, [
                 h("strong", { text: m.nickname }),
                 h("span", { class: "muted small", text: (m.team_name ? m.team_name + "・" : "") + m.phone_tail })
               ]),
-              h("button", {
-                class: "pill pill-red",
-                type: "button",
-                disabled: added || form.helpers.length >= 10,
-                onClick: function () {
-                  form.helpers.push({ id: m.id, nickname: m.nickname });
-                  helperSearch.value = "";
-                  clear(helperResults);
-                  drawHelpers();
-                },
-                text: added ? "已加入" : "加入"
-              })
-            ]));
+              added ? h("span", { class: "muted small", text: "已加入" }) : null
+            ]);
+
+            row.addEventListener("click", function () {
+              var i = picks.indexOf(m);
+              if (i === -1) {
+                picks.push(m);
+              } else {
+                picks.splice(i, 1);
+              }
+              row.classList.toggle("on", i === -1);
+              row.setAttribute("aria-pressed", i === -1 ? "true" : "false");
+              drawBatch();
+            });
+
+            helperResults.appendChild(row);
           });
 
           if (!helperResults.children.length) {
             helperResults.appendChild(h("p", { class: "muted small", text: "找不到會員。" }));
+          } else {
+            drawBatch();
+            helperResults.appendChild(batchBtn);
           }
         }).catch(function () {});
       }, 250);
@@ -3240,7 +3267,7 @@
         started ? null : h("button", { class: "dash-btn", type: "button", onClick: addPlayers, text: "＋ 加入這些名字" })
       ]),
       h("div", { class: "field" }, [
-        h("span", { class: "label", text: "協助輸入勝負的會員（最多 10 位）" }),
+        h("span", { class: "label", text: "加入裁判（最多 10 位）" }),
         helperChips,
         helperSearch,
         helperResults
@@ -3258,10 +3285,21 @@
 
   function renderBracketView(code) {
 
-    function load(silent) {
+    var version = "";
 
-      return api("/api/brackets/view/" + encodeURIComponent(code) + "?_=" + Date.now())
+    /* poll = true：定時更新，先問有沒有變動（只讀 1 筆），沒變就不重畫 */
+    function load(silent, poll) {
+
+      var query = poll && version ? "?since=" + encodeURIComponent(version) + "&_=" + Date.now() : "?_=" + Date.now();
+
+      return api("/api/brackets/view/" + encodeURIComponent(code) + query)
         .then(function (res) {
+
+          if (res.unchanged) {
+            return;
+          }
+
+          version = res.data.version || "";
           drawBracketView(res.data, load);
         })
         .catch(function () {
@@ -3276,7 +3314,7 @@
     load(false).then(function () {
       state.bracketTimer = setInterval(function () {
         if (!document.hidden && !state.bracketBusy) {
-          load(true);
+          load(true, true);
         }
       }, 15000);
     });
@@ -3380,9 +3418,23 @@
       return m.round === 1 && m.state === "bye" && m.code.charAt(0) === "R";
     }
 
+    /*
+      位置：一般樹狀圖是每一場放在下一輪兩場的正中間，越後面的輪次兩場會離很遠。
+      這裡把「同一組」的兩場（會打進同一場的）往中間靠，兩場最多只隔一格，線照樣連著。
+    */
     function posOf(m) {
+
       var gap = ROW * Math.pow(2, m.round - 1);
-      return { x: X0 + (m.round - 1) * COL, y: TOP + (m.slot - 1) * gap + (gap - ROW) / 2, gap: gap };
+      var x = X0 + (m.round - 1) * COL;
+      var center = TOP + (m.slot - 1) * gap + gap / 2;
+
+      if (m.code.charAt(0) === "R" && m.round < data.rounds && gap > ROW * 2) {
+        var pair = Math.ceil(m.slot / 2);
+        var mid = TOP + (pair - 1) * gap * 2 + gap;
+        center = mid + (m.slot % 2 === 1 ? -ROW : ROW);
+      }
+
+      return { x: x, y: center - ROW / 2, gap: gap };
     }
 
     var canvas = h("div", { class: "bracket-canvas", style: "width: " + width + "px; height: " + height + "px" });

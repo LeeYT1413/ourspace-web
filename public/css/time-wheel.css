@@ -1,0 +1,90 @@
+/* =========================================================
+   時間欄位：直接輸入 + 滾輪
+========================================================= */
+
+.time-input {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 1px;
+}
+
+.tw-panel {
+  position: fixed;
+  z-index: 300;
+  width: 220px;
+  padding: 10px 10px 8px;
+  color: #F1E6D2;
+  background: #1D2F4F;
+  border: 1px solid rgba(241, 230, 210, 0.3);
+  border-radius: 16px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+
+.tw-cols {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 180px;
+}
+
+.tw-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 72px;
+  height: 36px;
+  background: rgba(241, 230, 210, 0.12);
+  border-radius: 10px;
+  pointer-events: none;
+}
+
+.tw-col {
+  position: relative;
+  width: 70px;
+  height: 180px;
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(transparent, #000 30%, #000 70%, transparent);
+  mask-image: linear-gradient(transparent, #000 30%, #000 70%, transparent);
+}
+
+.tw-col::-webkit-scrollbar {
+  display: none;
+}
+
+.tw-pad {
+  height: 72px;
+}
+
+.tw-item {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  scroll-snap-align: center;
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.tw-colon {
+  font-size: 22px;
+  font-weight: 700;
+  color: #E9B95A;
+}
+
+.tw-done {
+  width: 100%;
+  min-height: 38px;
+  margin-top: 6px;
+  color: #14213A;
+  background: #D9A441;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}

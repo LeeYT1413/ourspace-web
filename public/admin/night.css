@@ -464,3 +464,9 @@ input[type="datetime-local"] {
 .badge {
   border-radius: 999px;
 }
+
+/* 提示訊息一律放在畫面上方，不擋按鈕 */
+.toast {
+  top: calc(76px + env(safe-area-inset-top, 0px));
+  bottom: auto;
+}

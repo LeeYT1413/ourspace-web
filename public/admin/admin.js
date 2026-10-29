@@ -540,49 +540,12 @@
      時間：24 小時制、每 10 分鐘一格
   ======================================================= */
 
+  /* 時間欄位：可以直接打數字，也可以用滾輪選（分鐘每 10 分一格），見 /js/time-wheel.js */
   function timeSelect(value, emptyLabel) {
-
-    var select = el("select", "time-select");
-    var found = !value;
-
-    function add(t) {
-      var option = el("option", null, t);
-      option.value = t;
-      select.appendChild(option);
-    }
-
-    if (emptyLabel !== null) {
-      var empty = el("option", null, emptyLabel || "未定");
-      empty.value = "";
-      select.appendChild(empty);
-    }
-
-    for (var h = 0; h < 24; h++) {
-      for (var m = 0; m < 60; m += 10) {
-
-        var t = (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m;
-
-        /* 舊資料不是整 10 分的，保留原本的時間 */
-        if (!found && value < t) {
-          add(value);
-          found = true;
-        }
-
-        if (t === value) {
-          found = true;
-        }
-
-        add(t);
-      }
-    }
-
-    if (!found) {
-      add(value);
-    }
-
-    select.value = value || "";
-
-    return select;
+    return window.OurSpaceTimeInput(value || "", {
+      empty: emptyLabel === null ? null : (emptyLabel || "未定"),
+      className: "time-select"
+    });
   }
 
 
