@@ -299,9 +299,26 @@ async function handlePublic(request, parts, env) {
     .bind(today)
     .all();
 
+    /* 比賽獎品（有填才顯示） */
+    var prizeRows = await env.DB.prepare(
+      "SELECT p.event_id, p.prize, p.qty FROM checkin_event_prizes p " +
+      "INNER JOIN checkin_events e ON e.id = p.event_id " +
+      "WHERE e.is_public = 1 AND e.event_date >= ? AND p.prize IS NOT NULL AND p.prize != '' " +
+      "ORDER BY p.event_id, p.sort, p.id"
+    )
+    .bind(today)
+    .all();
+
+    var prizesByEvent = {};
+
+    (prizeRows.results || []).forEach(function (p) {
+      (prizesByEvent[p.event_id] = prizesByEvent[p.event_id] || []).push({ prize: p.prize, qty: p.qty || 1 });
+    });
+
     /* 前台不顯示報名人數、報到人數，只告訴前台是不是額滿 */
     var rows = (list.results || []).map(function (row) {
       row.poster_url = posterOf(row);
+      row.prizes = prizesByEvent[row.id] || [];
       row.is_full = !!row.capacity && Number(row.total) >= Number(row.capacity);
       delete row.poster_link;
       delete row.total;

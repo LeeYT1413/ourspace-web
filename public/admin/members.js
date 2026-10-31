@@ -353,6 +353,7 @@
             var info = el("span", "ck-name");
             info.appendChild(el("strong", null, m.nickname + (m.status !== "active" ? "（已停用）" : "")));
             info.appendChild(el("small", null, (m.team_name || "未加入戰隊") + "・" + (m.phone || "")));
+            info.appendChild(el("small", "mm-line", "LINE：" + (m.line_name || "—") + "・會員編號 W" + m.id));
 
             row.appendChild(info);
 
@@ -716,11 +717,11 @@
      系統管理員：手動補登參賽紀錄、上位紀錄
   ======================================================= */
 
+  /* 參賽紀錄為主；每一場底下可以展開，查看或加入上位紀錄 */
   function recordsEditor(m) {
 
     var box = el("div", "mm-identities mm-records");
-    var gamesList = el("div", "mm-results");
-    var placeList = el("div", "mm-results");
+    var list = el("div", "mm-results");
 
     function miniInput(type, placeholder, label) {
       var node = el("input", "mm-input");
@@ -731,107 +732,156 @@
     }
 
     function today() {
-      var d = new Date(Date.now() + 8 * 3600000);
-      return d.toISOString().slice(0, 10);
+      return new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+    }
+
+    function key(date, name) {
+      return String(date || "").slice(0, 10) + "|" + String(name || "").replace(/\s+/g, "").toLowerCase();
+    }
+
+    function placeText(n) {
+      return { 1: "冠軍", 2: "亞軍", 3: "季軍" }[n] || "第 " + n + " 名";
+    }
+
+    function sourceTag(source) {
+      return el("span", "ck-tag " + (source === "manual" ? "ck-tag-gold" : "ck-tag-navy"), source === "manual" ? "補登" : "報到系統");
+    }
+
+    function remove(path, message) {
+      if (!window.confirm(message)) {
+        return;
+      }
+      api("DELETE", "/" + m.id + path).then(draw).catch(function (error) { toast(errorText(error), "error"); });
     }
 
     function draw(res) {
 
-      clear(gamesList);
-      clear(placeList);
+      clear(list);
+
+      var byKey = {};
 
       (res.placements || []).forEach(function (p) {
-
-        var line = el("div", "mm-team");
-        var place = { 1: "冠軍", 2: "亞軍", 3: "季軍" }[p.placement] || "第 " + p.placement + " 名";
-
-        line.appendChild(el("span", "mm-grow", p.event_date.replace(/-/g, "/") + "　" + p.event_name + "　" + p.participant_count + " 人・" + place +
-          (p.entry_name ? "・以「" + p.entry_name + "」參賽" : "")));
-        line.appendChild(el("span", "ck-tag " + (p.source === "manual" ? "ck-tag-gold" : "ck-tag-navy"), p.source === "manual" ? "補登" : "報到系統"));
-
-        if (p.source === "manual") {
-          line.appendChild(button("刪除", "btn btn-ghost btn-small", function () {
-            if (!window.confirm("刪除這筆補登的上位紀錄？")) {
-              return;
-            }
-            api("DELETE", "/" + m.id + "/placements/" + p.id).then(draw).catch(function (error) { toast(errorText(error), "error"); });
-          }));
-        }
-
-        placeList.appendChild(line);
+        var k = key(p.event_date, p.event_name);
+        (byKey[k] = byKey[k] || []).push(p);
       });
 
-      if (!(res.placements || []).length) {
-        placeList.appendChild(el("p", "mm-sub", "還沒有上位紀錄。"));
+      var rows = (res.games || []).map(function (g) {
+        var k = key(g.event_date, g.event_name);
+        var wins = byKey[k] || [];
+        delete byKey[k];
+        return { game: g, wins: wins };
+      });
+
+      /* 有上位、但沒有參賽紀錄的（以前手動登錄的） */
+      Object.keys(byKey).forEach(function (k) {
+        var first = byKey[k][0];
+        rows.push({ game: { source: "none", event_date: first.event_date, event_name: first.event_name, participant_count: first.participant_count }, wins: byKey[k] });
+      });
+
+      rows.sort(function (a, b) { return String(b.game.event_date).localeCompare(String(a.game.event_date)); });
+
+      if (!rows.length) {
+        list.appendChild(el("p", "mm-sub", "還沒有參賽紀錄。"));
       }
 
-      (res.games || []).forEach(function (g) {
+      rows.forEach(function (row) {
 
-        var line = el("div", "mm-team");
+        var g = row.game;
+        var item = el("details", "mm-game");
+        var summary = el("summary", "mm-team mm-game-head");
+        var best = row.wins.slice().sort(function (a, b) { return a.placement - b.placement; })[0];
 
-        line.appendChild(el("span", "mm-grow", g.event_date.replace(/-/g, "/") + "　" + g.event_name +
-          (g.participant_count ? "　" + g.participant_count + " 人" : "") + (g.entry_name ? "・以「" + g.entry_name + "」參賽" : "")));
-        line.appendChild(el("span", "ck-tag " + (g.source === "manual" ? "ck-tag-gold" : "ck-tag-navy"), g.source === "manual" ? "補登" : "報到系統"));
+        summary.appendChild(el("span", "mm-grow", String(g.event_date).replace(/-/g, "/") + "　" + g.event_name +
+          (g.participant_count ? "　" + g.participant_count + " 人" : "")));
+
+        if (best) {
+          summary.appendChild(el("span", "ck-tag ck-tag-red", placeText(best.placement)));
+        }
+
+        summary.appendChild(g.source === "none" ? el("span", "ck-tag ck-tag-brown", "無參賽紀錄") : sourceTag(g.source));
+        item.appendChild(summary);
+
+        var inner = el("div", "mm-game-body");
+
+        if (g.entry_name) {
+          inner.appendChild(el("span", "mm-sub", "以「" + g.entry_name + "」參賽"));
+        }
+
+        /* 上位紀錄 */
+        row.wins.forEach(function (p) {
+
+          var line = el("div", "mm-team mm-win");
+
+          line.appendChild(el("span", "mm-grow", placeText(p.placement) + "・" + p.participant_count + " 人" +
+            (p.entry_name ? "・以「" + p.entry_name + "」參賽" : "")));
+          line.appendChild(sourceTag(p.source));
+
+          if (p.source === "manual") {
+            line.appendChild(button("刪除", "btn btn-ghost btn-small", function () {
+              remove("/placements/" + p.id, "刪除這筆補登的上位紀錄？");
+            }));
+          }
+
+          inner.appendChild(line);
+        });
+
+        /* 加入上位 */
+        var rank = miniInput("number", "第幾名", "名次");
+        var total = miniInput("number", "人數", "參賽人數");
+        var entry = miniInput("text", "參賽名稱");
+        var configs = miniInput("text", "配置（選填，多個用、分開）");
+        var addRow = el("div", "mm-add-row");
+
+        total.value = g.participant_count || "";
+        entry.value = g.entry_name || m.nickname || "";
+
+        addRow.appendChild(rank);
+        addRow.appendChild(total);
+        addRow.appendChild(entry);
+        addRow.appendChild(configs);
+        addRow.appendChild(button("＋ 加入上位", "btn btn-gold btn-small", function () {
+          api("POST", "/" + m.id + "/placements", {
+            event_date: g.event_date,
+            event_name: g.event_name,
+            participant_count: total.value,
+            placement: rank.value,
+            entry_name: entry.value,
+            configs: configs.value ? configs.value.split(/[、,，]/) : [],
+            also_game: g.source === "none"
+          })
+            .then(function (res2) { toast("已加入上位紀錄。", "success"); draw(res2); })
+            .catch(function (error) { toast(errorText(error), "error"); });
+        }));
+
+        inner.appendChild(addRow);
+
+        if (g.source === "none") {
+          inner.appendChild(button("＋ 補上這場的參賽紀錄", "btn btn-ghost btn-small", function () {
+            api("POST", "/" + m.id + "/games", {
+              event_date: g.event_date,
+              event_name: g.event_name,
+              participant_count: g.participant_count,
+              entry_name: (row.wins[0] && row.wins[0].entry_name) || m.nickname || ""
+            })
+              .then(function (res2) { toast("已補上參賽紀錄。", "success"); draw(res2); })
+              .catch(function (error) { toast(errorText(error), "error"); });
+          }));
+        }
 
         if (g.source === "manual") {
-          line.appendChild(button("刪除", "btn btn-ghost btn-small", function () {
-            if (!window.confirm("刪除這筆補登的參賽紀錄？")) {
-              return;
-            }
-            api("DELETE", "/" + m.id + "/games/" + g.id).then(draw).catch(function (error) { toast(errorText(error), "error"); });
+          inner.appendChild(button("刪除這筆參賽紀錄", "ck-link-danger", function () {
+            remove("/games/" + g.id, "刪除這筆補登的參賽紀錄？（上位紀錄要另外刪除）");
           }));
+        } else if (g.source === "checkin") {
+          inner.appendChild(el("span", "mm-sub", "報到系統的紀錄請到場次管理用「解除封存」修改。"));
         }
 
-        gamesList.appendChild(line);
+        item.appendChild(inner);
+        list.appendChild(item);
       });
-
-      if (!(res.games || []).length) {
-        gamesList.appendChild(el("p", "mm-sub", "還沒有參賽紀錄。"));
-      }
     }
 
-    /* 補登上位紀錄 */
-    var pDate = miniInput("date", "日期");
-    var pName = miniInput("text", "比賽名稱");
-    var pTotal = miniInput("number", "人數", "參賽人數");
-    var pRank = miniInput("number", "第幾名", "名次");
-    var pEntry = miniInput("text", "參賽名稱（選填）");
-    var pConfigs = miniInput("text", "配置（選填，多個用、分開）");
-
-    pDate.value = today();
-    pEntry.value = m.nickname || "";
-
-    var pRow1 = el("div", "mm-add-row");
-    var pRow2 = el("div", "mm-add-row");
-    var pRow3 = el("div", "mm-add-row");
-
-    pRow1.appendChild(pDate);
-    pRow1.appendChild(pName);
-    pRow2.appendChild(pTotal);
-    pRow2.appendChild(pRank);
-    pRow2.appendChild(pEntry);
-    pRow3.appendChild(pConfigs);
-    pRow3.appendChild(button("＋ 補登上位", "btn btn-gold btn-small", function () {
-      api("POST", "/" + m.id + "/placements", {
-        event_date: pDate.value,
-        event_name: pName.value,
-        participant_count: pTotal.value,
-        placement: pRank.value,
-        entry_name: pEntry.value,
-        configs: pConfigs.value ? pConfigs.value.split(/[、,，]/) : []
-      })
-        .then(function (res) {
-          toast("已補登上位紀錄（也同時補了一筆參賽紀錄）。", "success");
-          pName.value = "";
-          pTotal.value = "";
-          pRank.value = "";
-          pConfigs.value = "";
-          draw(res);
-        })
-        .catch(function (error) { toast(errorText(error), "error"); });
-    }));
-
-    /* 補登參賽紀錄 */
+    /* 補登參賽 */
     var gDate = miniInput("date", "日期");
     var gName = miniInput("text", "比賽名稱");
     var gTotal = miniInput("number", "人數（選填）", "參賽人數");
@@ -855,7 +905,7 @@
         entry_name: gEntry.value
       })
         .then(function (res) {
-          toast("已補登參賽紀錄。", "success");
+          toast("已補登參賽紀錄。點開那一場可以加入上位。", "success");
           gName.value = "";
           gTotal.value = "";
           draw(res);
@@ -863,13 +913,8 @@
         .catch(function (error) { toast(errorText(error), "error"); });
     }));
 
-    box.appendChild(el("span", "field-label", "上位紀錄（補登的可以刪除；報到系統的請用解除封存）"));
-    box.appendChild(placeList);
-    box.appendChild(pRow1);
-    box.appendChild(pRow2);
-    box.appendChild(pRow3);
-    box.appendChild(el("span", "field-label", "參賽紀錄"));
-    box.appendChild(gamesList);
+    box.appendChild(el("span", "field-label", "參賽紀錄（點開可以加入上位紀錄）"));
+    box.appendChild(list);
     box.appendChild(gRow1);
     box.appendChild(gRow2);
 

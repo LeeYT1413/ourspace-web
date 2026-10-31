@@ -383,15 +383,23 @@ async function listMembers(url, env, staff) {
     var like = "%" + keyword.replace(/[\\%_]/g, "\\$&") + "%";
     var digits = keyword.replace(/\D/g, "");
 
+    /* 會員編號：W12 或 12 */
+    var memberNo = /^w?\d{1,7}$/i.test(keyword) ? Number(keyword.replace(/\D/g, "")) : 0;
+
     where.push(
       "(u.nickname LIKE ? ESCAPE '\\' OR u.line_name LIKE ? ESCAPE '\\' OR t.team_name LIKE ? ESCAPE '\\'" +
-      (digits.length >= 3 ? " OR replace(replace(u.phone, '-', ''), ' ', '') LIKE ?" : "") + ")"
+      (digits.length >= 3 ? " OR replace(replace(u.phone, '-', ''), ' ', '') LIKE ?" : "") +
+      (memberNo ? " OR u.id = ?" : "") + ")"
     );
 
     binds.push(like, like, like);
 
     if (digits.length >= 3) {
       binds.push("%" + digits + "%");
+    }
+
+    if (memberNo) {
+      binds.push(memberNo);
     }
   }
 

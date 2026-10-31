@@ -327,7 +327,7 @@
 
     var links = document.getElementById("menuLinks");
     var items = [
-      ["events", "賽事名單"],
+      ["events", "窩室賽程"],
       ["brackets", "比賽賽程"],
       ["ranking", "陀螺爭霸"],
       ["teams", "陀螺戰隊"],
@@ -477,7 +477,7 @@
     (pages[page] || renderHome)(id);
 
     var titles = {
-      events: "賽事名單",
+      events: "窩室賽程",
       roster: "賽事詳情",
       ranking: "陀螺爭霸",
       teams: "陀螺戰隊",
@@ -845,7 +845,7 @@
 
     clear(app);
 
-    app.appendChild(pageTitle("賽事名單", "EVENTS"));
+    app.appendChild(pageTitle("窩室賽程", "EVENTS"));
     app.appendChild(h("p", { class: "lead", text: "勾選想參加的大型賽事，可以一次報名多場、幫朋友一起報。" }));
 
     if (!state.member) {
@@ -904,6 +904,15 @@
       }
 
       card.appendChild(top);
+
+      /* 比賽獎品（有填才顯示） */
+      if ((event.prizes || []).length) {
+        card.appendChild(h("div", { class: "card-prizes" }, [h("span", { class: "card-prizes-label", text: "獎品" })].concat(
+          event.prizes.map(function (p) {
+            return h("span", { class: "card-prize", text: p.prize + (Number(p.qty) > 1 ? " × " + p.qty : "") });
+          })
+        )));
+      }
 
       card.appendChild(h("span", { class: "card-link", text: "查看賽事詳情 ›" }));
 
@@ -1079,7 +1088,7 @@
 
         clear(app);
 
-        app.appendChild(h("a", { class: "back-link", href: "#events", text: "‹ 賽事名單" }));
+        app.appendChild(h("a", { class: "back-link", href: "#events", text: "‹ 窩室賽程" }));
 
         if (!events.length) {
           app.appendChild(stateText("目前沒有今天或之後的場次。"));
@@ -2177,7 +2186,11 @@
 
     var tabs = h("div", { class: "seg" });
 
-    [["signups", "報名"], ["history", "參賽"], ["placements", "上位"], ["teams", "戰隊"]].forEach(function (t) {
+    if (tab === "placements") {
+      tab = "history";
+    }
+
+    [["signups", "報名"], ["history", "參賽"], ["points", "集點"], ["teams", "戰隊"]].forEach(function (t) {
       tabs.appendChild(h("button", {
         class: "seg-btn" + (tab === t[0] ? " active" : ""),
         type: "button",
@@ -2206,7 +2219,16 @@
 
     body.appendChild(stateText("載入中…"));
 
-    ({ signups: meSignups, history: meHistory, placements: mePlacements, teams: meTeams })[tab](body);
+    ({ signups: meSignups, history: meHistory, points: mePoints, teams: meTeams })[tab](body);
+  }
+
+
+  /* 集點：規則確定前先顯示「敬請期待」 */
+  function mePoints(body) {
+    clear(body);
+    body.appendChild(h("section", { class: "section" }, [
+      h("div", { class: "coming-soon" }, [h("strong", { class: "serif", text: "敬請期待" })])
+    ]));
   }
 
 
@@ -2257,57 +2279,93 @@
   }
 
 
+  /* 參賽紀錄為主；該場有上位，點開可以看上位紀錄（名次、參賽名稱、配置） */
   function meHistory(body) {
 
-    memberApi("GET", "/history").then(function (response) {
+    Promise.all([memberApi("GET", "/history"), memberApi("GET", "/placements")]).then(function (res) {
 
       clear(body);
 
-      var list = response.data || [];
-      var box = h("section", { class: "section" }, [sectionTitle("參賽紀錄", h("span", { class: "muted small", text: "共 " + list.length + " 場（有報到的才算）" }))]);
+      var games = (res[0].data || []).slice();
+      var placements = (res[1].placements || []).slice();
 
-      if (!list.length) {
+      function key(date, name) {
+        return String(date || "").slice(0, 10) + "|" + String(name || "").replace(/\s+/g, "").toLowerCase();
+      }
+
+      var byKey = {};
+
+      placements.forEach(function (p) {
+        var k = key(p.event_date, p.event_name);
+        (byKey[k] = byKey[k] || []).push(p);
+      });
+
+      var rows = games.map(function (g) {
+        var k = key(g.event_date, g.title);
+        var wins = byKey[k] || [];
+        delete byKey[k];
+        return { date: g.event_date, title: g.title, number: g.checkin_number, wins: wins };
+      });
+
+      /* 有上位、但沒有對應參賽紀錄的（例如以前手動登錄的），也列出來 */
+      Object.keys(byKey).forEach(function (k) {
+        var list = byKey[k];
+        rows.push({ date: list[0].event_date, title: list[0].event_name, number: null, wins: list });
+      });
+
+      rows.sort(function (a, b) { return String(b.date).localeCompare(String(a.date)); });
+
+      var box = h("section", { class: "section" }, [sectionTitle("參賽紀錄", h("span", { class: "muted small", text: "共 " + rows.length + " 場" }))]);
+
+      if (!rows.length) {
         box.appendChild(stateText("還沒有參賽紀錄。"));
       }
 
-      list.forEach(function (row) {
-        box.appendChild(h("div", { class: "history-row" }, [
-          h("span", { class: "history-date", text: dateLabel(row.event_date).replace(/（.）/, "") }),
-          h("strong", { class: "grow", text: row.title + (row.rank_label ? "・" + row.rank_label : "") }),
-          h("span", { class: "muted small", text: row.checkin_number ? "No." + row.checkin_number : "" })
-        ]));
+      rows.forEach(function (row) {
+
+        var date = dateLabel(row.date).replace(/（.）/, "");
+        var best = row.wins.slice().sort(function (a, b) { return a.placement - b.placement; })[0];
+
+        var head = [
+          h("span", { class: "history-date", text: date }),
+          h("strong", { class: "grow", text: row.title }),
+          best ? h("span", { class: "medal medal-sm medal-" + placeStyle(placeName(best.placement)), text: placeName(best.placement) }) : null,
+          !best && row.number ? h("span", { class: "muted small", text: "No." + row.number }) : null
+        ];
+
+        if (!row.wins.length) {
+          box.appendChild(h("div", { class: "history-row" }, head));
+          return;
+        }
+
+        var details = h("details", { class: "history-item" }, [
+          h("summary", { class: "history-row" }, head.concat([h("span", { class: "history-caret", "aria-hidden": "true", text: "▾" })]))
+        ]);
+
+        row.wins.forEach(function (p) {
+          details.appendChild(h("div", { class: "win-detail" }, [
+            h("span", { class: "medal medal-" + placeStyle(placeName(p.placement)), text: placeName(p.placement) }),
+            h("div", { class: "grow" }, [
+              h("span", { class: "muted small", text: p.participant_count + " 人參賽" + (p.team_name ? "・代表 " + p.team_name : "") + (row.number ? "・No." + row.number : "") }),
+              p.entry_name ? h("span", { class: "muted small entry-name", text: "參賽名稱：" + p.entry_name }) : null,
+              configText(p.configs) ? h("span", { class: "config-line", text: configText(p.configs) }) : null
+            ])
+          ]));
+        });
+
+        box.appendChild(details);
       });
 
       body.appendChild(box);
+      drawClaims(body, res[1]);
     });
   }
 
 
-  function mePlacements(body) {
+  /* 認領以前的選手資料 */
+  function drawClaims(body, response) {
 
-    memberApi("GET", "/placements").then(function (response) {
-
-      clear(body);
-
-      var box = h("section", { class: "section" }, [sectionTitle("上位紀錄")]);
-
-      if (!(response.placements || []).length) {
-        box.appendChild(stateText("還沒有上位紀錄。認領以前的選手資料，紀錄就會算進來。"));
-      }
-
-      (response.placements || []).forEach(function (row) {
-        box.appendChild(h("div", { class: "night-card win-row" }, [
-          h("span", { class: "medal medal-" + placeStyle(placeName(row.placement)), text: placeName(row.placement) }),
-          h("div", { class: "grow" }, [
-            h("strong", { text: row.event_name }),
-            h("span", { class: "muted", text: dateLabel(row.event_date) + "・" + row.participant_count + " 人" + (row.team_name ? "・代表 " + row.team_name : "") }),
-            row.entry_name ? h("span", { class: "muted small entry-name", text: "參賽名稱：" + row.entry_name }) : null,
-            configText(row.configs) ? h("span", { class: "config-line", text: configText(row.configs) }) : null
-          ])
-        ]));
-      });
-
-      body.appendChild(box);
+    (function () {
 
       /* ---------- 認領選手資料 ---------- */
 
@@ -2336,7 +2394,7 @@
             type: "button",
             "aria-label": "取消申請",
             onClick: function () {
-              memberApi("DELETE", "/claims/" + c.id).then(function () { mePlacements(body); });
+              memberApi("DELETE", "/claims/" + c.id).then(function () { meHistory(body); });
             },
             text: "×"
           }) : null
@@ -2375,7 +2433,7 @@
                   onClick: function () {
                     memberApi("POST", "/claims", { player_id: p.id }).then(function () {
                       toast("已送出認領申請，等店家審核。", "success");
-                      mePlacements(body);
+                      meHistory(body);
                     }).catch(function (error) {
                       toast(errorText(error), "error");
                     });
@@ -2395,7 +2453,7 @@
       card.appendChild(search);
       card.appendChild(found);
       body.appendChild(claim);
-    });
+    })();
   }
 
 
@@ -2983,7 +3041,7 @@
         }
 
         if (!id) {
-          drawBracketForm({ id: null, title: "", event_date: "", format: "champ", participants: [], helpers: [] });
+          drawBracketForm({ id: null, title: "", event_date: "", format: "top4", participants: [], helpers: [] });
           return;
         }
 

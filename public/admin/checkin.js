@@ -831,7 +831,7 @@
       clear(publicSwitch);
       publicSwitch.setAttribute("role", "switch");
       publicSwitch.setAttribute("aria-checked", publicOn ? "true" : "false");
-      publicSwitch.appendChild(el("span", null, "在官網「賽事名單」公開"));
+      publicSwitch.appendChild(el("span", null, "在官網「窩室賽程」公開"));
       publicSwitch.appendChild(el("span", "ck-switch" + (publicOn ? " on" : "")));
     }
 

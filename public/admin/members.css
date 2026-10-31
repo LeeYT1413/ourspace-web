@@ -310,3 +310,49 @@
 .mm-team-nick {
   flex: 0 0 120px;
 }
+
+/* 會員列表：LINE 名稱、會員編號 */
+.mm-line {
+  display: block;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+/* 參賽紀錄（可展開加入上位） */
+.mm-game {
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.mm-game-head {
+  list-style: none;
+  cursor: pointer;
+  flex-wrap: wrap;
+}
+
+.mm-game-head::-webkit-details-marker {
+  display: none;
+}
+
+.mm-game[open] .mm-game-head {
+  border-bottom: 1px solid var(--line);
+}
+
+.mm-game-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 10px;
+}
+
+.mm-win {
+  background: var(--panel);
+}
+
+.mm-game-body .mm-add-row {
+  flex-wrap: wrap;
+}
+
+.mm-game-body .mm-add-row .mm-input {
+  flex: 1 1 90px;
+}
