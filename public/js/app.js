@@ -558,8 +558,9 @@
 
         var next = null;
 
+        /* 下一場「報名中」的比賽：還沒截止、還沒額滿 */
         events.forEach(function (event) {
-          if (!next && event.event_type === "big" && !event.archived_at) {
+          if (!next && event.event_type === "big" && !event.archived_at && !event.is_full && !signupClosed(event)) {
             next = event;
           }
         });
@@ -1287,8 +1288,31 @@
         var list = response.data || [];
 
         clear(app);
-        app.appendChild(pageTitle("陀螺爭霸", "TOP SPINNERS"));
-        app.appendChild(h("p", { class: "lead", text: "在 30 人以上的比賽上位，才計入排行榜" }));
+        /* 標題旁的 ⓘ：游標移上去（手機點一下）顯示排行榜規則 */
+        var title = pageTitle("陀螺爭霸", "TOP SPINNERS");
+        var info = h("button", { class: "info-tip", type: "button", "aria-label": "排行榜規則", "aria-expanded": "false" }, [
+          h("span", { class: "info-icon", "aria-hidden": "true", text: "ⓘ" }),
+          h("span", { class: "info-pop", role: "tooltip" }, [
+            h("strong", { text: "排行榜規則：" }),
+            h("span", { text: "①在30人(含)以上的賽事中上位，列入次數計算。" }),
+            h("span", { text: "②先依上位次數排序，後以\"參賽人數:名次\"計算權重。" }),
+            h("span", { class: "info-note", text: "※陸續登載上位紀錄，若有問題請洽官賴。" })
+          ])
+        ]);
+
+        info.addEventListener("click", function (event) {
+          event.stopPropagation();
+          var open = info.classList.toggle("open");
+          info.setAttribute("aria-expanded", open ? "true" : "false");
+        });
+
+        document.addEventListener("click", function closeInfo() {
+          info.classList.remove("open");
+          info.setAttribute("aria-expanded", "false");
+        }, { once: true });
+
+        title.querySelector("h1").appendChild(info);
+        app.appendChild(title);
 
         if (!list.length) {
           app.appendChild(stateText("還沒有上位紀錄。"));
@@ -1428,7 +1452,9 @@
           setActive(Math.round(track.scrollLeft / Math.max(1, track.clientWidth)));
         });
 
-        app.appendChild(h("div", { class: "rank-dots-wrap" }, [tabs]));
+        /* 切換圓點放在標題列右側：不搶眼但看得到 */
+        title.classList.add("has-dots");
+        title.appendChild(h("div", { class: "rank-dots-wrap" }, [tabs]));
         app.appendChild(track);
       })
       .catch(function () {

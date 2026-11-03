@@ -3553,3 +3553,132 @@ button.bm-tag {
   font-size: 13px;
   font-weight: 700;
 }
+
+/* 陀螺爭霸：標題旁的 ⓘ 規則說明 */
+.page-title h1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.info-tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  cursor: help;
+  font: inherit;
+}
+
+.info-icon {
+  font-family: var(--sans, "Noto Sans TC", sans-serif);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.info-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  z-index: 40;
+  width: min(300px, 80vw);
+  padding: 12px 14px;
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--ink);
+  background: var(--paper);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  font-family: var(--sans, "Noto Sans TC", sans-serif);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.6;
+  text-align: left;
+  transform: translateX(-30%);
+  cursor: default;
+}
+
+.info-pop strong {
+  font-size: 14px;
+}
+
+.info-note {
+  margin-top: 4px;
+  color: var(--brown);
+  font-size: 12px;
+}
+
+.info-tip:hover .info-pop,
+.info-tip:focus-visible .info-pop,
+.info-tip.open .info-pop {
+  display: flex;
+}
+
+/* 切換圓點：放在標題列右側，縮小 */
+.page-title.has-dots {
+  position: relative;
+}
+
+.page-title.has-dots .rank-dots-wrap {
+  position: absolute;
+  right: 16px;
+  bottom: 6px;
+  padding: 0;
+}
+
+.page-title.has-dots .rank-dot {
+  width: 18px;
+  height: 18px;
+}
+
+.page-title.has-dots .rank-dot::before {
+  width: 8px;
+  height: 8px;
+}
+
+.page-title.has-dots .rank-dot.active {
+  width: 30px;
+}
+
+.page-title.has-dots .rank-dot.active::before {
+  width: 22px;
+}
+
+/* ⓘ 說明框不要套用標題小字的樣式 */
+.page-title .info-tip span,
+.page-title .info-pop strong {
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.page-title .info-icon {
+  color: var(--muted);
+  font-size: 18px;
+  font-weight: 400;
+}
+
+.page-title .info-pop span,
+.page-title .info-pop strong {
+  display: block;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.page-title .info-pop strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.page-title .info-pop .info-note {
+  color: var(--brown);
+  font-size: 12px;
+}
