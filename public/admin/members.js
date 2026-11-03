@@ -691,7 +691,11 @@
               line.appendChild(el("span", "mm-sub", "上位 " + p.upper_count));
               line.appendChild(button("連到這位會員", "btn btn-primary btn-small", function () {
                 api("POST", "/" + m.id + "/players/link", { player_id: p.id })
-                  .then(function () { toast("已認領：" + p.player_name, "success"); openDetail(m.id); })
+                  .then(function (res) {
+                    toast(res && res.duplicates ? "已認領：" + p.player_name + "。有 " + res.duplicates + " 組可能重複的上位紀錄，請在下方檢查。" : "已認領：" + p.player_name,
+                      res && res.duplicates ? "error" : "success");
+                    openDetail(m.id);
+                  })
                   .catch(function (error) { toast(errorText(error), "error"); });
               }));
 
@@ -758,6 +762,13 @@
 
       clear(list);
 
+      /* 可能重複的上位紀錄 id */
+      var dupIds = {};
+
+      (res.duplicates || []).forEach(function (ids) {
+        ids.forEach(function (pid) { dupIds[pid] = true; });
+      });
+
       var byKey = {};
 
       (res.placements || []).forEach(function (p) {
@@ -798,6 +809,10 @@
           summary.appendChild(el("span", "ck-tag ck-tag-red", placeText(best.placement)));
         }
 
+        if (row.wins.some(function (p) { return dupIds[p.id]; })) {
+          summary.appendChild(el("span", "ck-tag ck-tag-warn", "可能重複"));
+        }
+
         summary.appendChild(g.source === "none" ? el("span", "ck-tag ck-tag-brown", "無參賽紀錄") : sourceTag(g.source));
         item.appendChild(summary);
 
@@ -814,6 +829,11 @@
 
           line.appendChild(el("span", "mm-grow", placeText(p.placement) + "・" + p.participant_count + " 人" +
             (p.entry_name ? "・以「" + p.entry_name + "」參賽" : "")));
+
+          if (dupIds[p.id]) {
+            line.appendChild(el("span", "ck-tag ck-tag-warn", "可能重複"));
+          }
+
           line.appendChild(sourceTag(p.source));
 
           if (p.source === "manual") {
@@ -944,6 +964,37 @@
     var multiBox = el("div", "mm-multi");
     main.appendChild(multiBox);
 
+    /* 可能重複的上位紀錄：同一位會員、同一天、同名稱、同人數 */
+    var dupBox = el("div", "mm-multi");
+    main.appendChild(dupBox);
+
+    api("GET", "/duplicates").then(function (res) {
+
+      var list = res.data || [];
+
+      if (!list.length) {
+        return;
+      }
+
+      var details = el("details", "mm-multi-box");
+      details.appendChild(el("summary", null, "可能重複的上位紀錄（" + list.length + " 組）"));
+
+      list.forEach(function (g) {
+
+        var row = el("div", "mm-history");
+        var info = el("div", "mm-grow");
+
+        info.appendChild(el("strong", null, g.nickname || ("會員 W" + g.user_id)));
+        info.appendChild(el("span", "mm-sub", String(g.event_date).replace(/-/g, "/") + "　" + g.event_name + "　" + g.participant_count + " 人・" + g.n + " 筆"));
+
+        row.appendChild(info);
+        row.appendChild(button("整理", "btn btn-gold btn-small", function () { openDetail(g.user_id); }));
+        details.appendChild(row);
+      });
+
+      dupBox.appendChild(details);
+    }).catch(function () {});
+
     api("GET", "/multi").then(function (res) {
 
       var list = res.data || [];
@@ -991,8 +1042,10 @@
 
     function link(p, memberId, name) {
       api("POST", "/" + memberId + "/players/link", { player_id: p.id })
-        .then(function () {
-          toast("已連結：" + p.player_name + " → " + name, "success");
+        .then(function (res) {
+          toast(res && res.duplicates
+            ? "已連結：" + p.player_name + " → " + name + "。有 " + res.duplicates + " 組可能重複的上位紀錄，請到會員詳細資料檢查。"
+            : "已連結：" + p.player_name + " → " + name, res && res.duplicates ? "error" : "success");
           load();
         })
         .catch(function (error) {

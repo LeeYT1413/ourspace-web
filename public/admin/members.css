@@ -356,3 +356,8 @@
 .mm-game-body .mm-add-row .mm-input {
   flex: 1 1 90px;
 }
+
+.ck-tag-warn {
+  color: #14213A;
+  background: #E9B95A;
+}

@@ -1492,14 +1492,58 @@
 
     placeBlock.appendChild(sectionTitle("上位者與比賽獎品", "名次和獎品會照場次的獎品順序自動帶入，可以修改；每個獎品給一位上位者，選走的不會再出現。封存時，上位者會寫進上位紀錄。"));
 
-    /* 從「比賽賽程」匯入名次：貼上對戰表上複製的賽事 ID */
+    /* 連結「比賽賽程」：貼上對戰表上複製的賽事 ID，讀取名次、有幾輪、每一輪的參賽者 */
+    var bracketBox = el("div", "ck-bracket");
+
+    function drawBracket(info) {
+
+      clear(bracketBox);
+
+      if (!info) {
+        return;
+      }
+
+      var head = el("div", "ck-bracket-head");
+      head.appendChild(el("strong", null, "已連結對戰表 " + info.code + "・共 " + info.rounds.filter(function (r) { return r.label !== "名次賽"; }).length + " 個 Round"));
+
+      if (!locked) {
+        head.appendChild(button("取消連結", "ck-link-danger", function () {
+          if (!confirmBox("取消連結這個對戰表？已帶入的上位者不會被刪除。")) {
+            return;
+          }
+          api("DELETE", "/events/" + ck.eventId + "/bracket")
+            .then(function () { data.bracket = null; drawBracket(null); toast("已取消連結。", "success"); })
+            .catch(function (error) { toast(errorText(error), "error"); });
+        }));
+      }
+
+      bracketBox.appendChild(head);
+
+      info.rounds.forEach(function (r) {
+
+        var details = el("details", "ck-round");
+        var unmatched = r.players.filter(function (p) { return !p.entry_id; }).length;
+
+        details.appendChild(el("summary", null, r.label + "・" + r.players.length + " 人" + (unmatched ? "（" + unmatched + " 人對不到報到名單）" : "")));
+
+        var names = el("div", "ck-round-names");
+
+        r.players.forEach(function (p) {
+          names.appendChild(el("span", "ck-round-name" + (p.won ? " won" : "") + (p.entry_id ? "" : " missing"), p.name + (p.won ? " ✓" : "")));
+        });
+
+        details.appendChild(names);
+        bracketBox.appendChild(details);
+      });
+    }
+
     if (!locked) {
 
-      var importId = input("text", "", { maxlength: "20", placeholder: "貼上比賽賽程的賽事 ID", "aria-label": "比賽賽程的賽事 ID" });
+      var importId = input("text", data.bracket ? data.bracket.code : "", { maxlength: "20", placeholder: "貼上比賽賽程的賽事 ID", "aria-label": "比賽賽程的賽事 ID" });
       var importRow = el("div", "ck-inline ck-import");
 
       importRow.appendChild(importId);
-      importRow.appendChild(button("匯入名次", "btn btn-gold", function () {
+      importRow.appendChild(button("讀取對戰表", "btn btn-gold", function () {
 
         var code = importId.value.trim();
 
@@ -1508,20 +1552,11 @@
           return;
         }
 
-        fetch("/api/brackets/view/" + encodeURIComponent(code), { credentials: "same-origin" })
-          .then(function (r) { return r.json(); })
+        api("POST", "/events/" + ck.eventId + "/bracket", { code: code })
           .then(function (res) {
 
-            if (!res || !res.success) {
-              toast("找不到這個賽事 ID。", "error");
-              return;
-            }
-
-            var byName = {};
-
-            data.checked.forEach(function (entry) {
-              byName[String(entry.nickname).trim().toLowerCase()] = entry.id;
-            });
+            data.bracket = { code: res.data.code, rounds: res.data.rounds };
+            drawBracket(data.bracket);
 
             var options = (data.prize_options || []).map(function (opt) { return opt.label || opt.name; });
             var missing = [];
@@ -1529,31 +1564,29 @@
 
             res.data.standings.forEach(function (row) {
 
-              if (!row.name || row.name === "—") {
+              if (!row.name) {
                 return;
               }
 
-              var entryId = byName[String(row.name).trim().toLowerCase()] || null;
-
-              if (!entryId) {
+              if (!row.entry_id) {
                 missing.push(row.name);
               }
 
               list.push({
                 rank_label: "第" + (list.length + 1) + "名",
-                entry_id: entryId,
+                entry_id: row.entry_id,
                 prize: options[list.length] || "",
                 configs: []
               });
             });
 
             if (!list.length) {
-              toast("這場比賽賽程還沒有名次。", "error");
+              toast("已讀取對戰表的輪次。這場還沒有名次，打完後再讀取一次就能帶入。", "success");
               return;
             }
 
             if (form.placements.some(function (p) { return p.entry_id; }) &&
-                !confirmBox("要用比賽賽程的名次取代目前的上位者嗎？")) {
+                !confirmBox("要用對戰表的名次取代目前的上位者嗎？（選「取消」只更新輪次資料）")) {
               return;
             }
 
@@ -1561,16 +1594,20 @@
             drawPlacements();
 
             toast(missing.length
-              ? "已匯入 " + list.length + " 個名次。找不到報到名單裡的：" + missing.join("、") + "（請手動選）"
-              : "已匯入 " + list.length + " 個名次。", missing.length ? "error" : "success");
+              ? "已帶入 " + list.length + " 個名次。找不到報到名單裡的：" + missing.join("、") + "（請手動選）"
+              : "已帶入 " + list.length + " 個名次，也讀取了每一輪的參賽者。", missing.length ? "error" : "success");
           })
-          .catch(function () {
-            toast("匯入失敗，請稍後再試。", "error");
+          .catch(function (error) {
+            var map = { BRACKET_NOT_FOUND: "找不到這個賽事 ID。", BRACKET_NOT_READY: "比賽賽程資料庫還沒設定。" };
+            toast(map[error && error.code] || errorText(error), "error");
           });
       }));
 
       placeBlock.appendChild(importRow);
     }
+
+    placeBlock.appendChild(bracketBox);
+    drawBracket(data.bracket);
     placeBlock.appendChild(placeList);
 
     if (!locked) {
@@ -1648,8 +1685,10 @@
       archiveBtn.disabled = true;
 
       api("POST", "/events/" + ck.eventId + "/archive", payload())
-        .then(function () {
-          toast("已封存。", "success");
+        .then(function (res) {
+          toast(res && res.duplicate_members
+            ? "已封存。有 " + res.duplicate_members + " 位會員出現可能重複的上位紀錄，請到「會員管理 → 選手資料整合」檢查。"
+            : "已封存。", res && res.duplicate_members ? "error" : "success");
           ck.listGroup = "archived";
           return loadEvents().then(renderSettle);
         })

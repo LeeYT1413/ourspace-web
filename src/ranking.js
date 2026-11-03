@@ -18,7 +18,7 @@
 export var RANK_MIN_PLAYERS = 30;
 
 /* 計算方式改了就換版本號，上線後第一次打開排行榜會自動重算 */
-var RANK_VERSION = "clean-v5";
+var RANK_VERSION = "clean-v6";
 
 
 export async function markRankingDirty(env) {
@@ -55,7 +55,8 @@ export async function rebuildRanking(env) {
       "MAX(pp.event_date) " +
       "FROM player_placements pp " +
       "INNER JOIN players p ON p.id = pp.player_id " +
-      "LEFT JOIN users u ON u.id = p.user_id AND u.status = 'active' " +
+      /* 會員：直接用上位紀錄上的會員編號合併 */
+      "LEFT JOIN users u ON u.id = pp.user_id AND u.status = 'active' " +
       "LEFT JOIN teams t ON t.id = p.team_id " +
       "LEFT JOIN teams ut ON ut.id = u.primary_team_id " +
       "WHERE p.status = 'active' AND pp.placement > 0 AND pp.participant_count >= ? " +
@@ -109,7 +110,7 @@ export async function rankingHighlights(env, key) {
     return null;
   }
 
-  var where = match[1] === "U" ? "p.user_id = ?" : "p.id = ?";
+  var where = match[1] === "U" ? "pp.user_id = ?" : "p.id = ?";
 
   var rows = await env.DB.prepare(
     "SELECT pp.event_date, pp.event_name, pp.participant_count, pp.placement, pp.configs, pp.entry_name, t.team_name " +

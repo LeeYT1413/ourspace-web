@@ -1052,10 +1052,11 @@ async function myPlacements(env, member) {
 
   var results = await env.DB.batch([
     env.DB.prepare(
+      /* 上位紀錄直接用會員編號找 */
       "SELECT pp.event_date, pp.event_name, pp.participant_count, pp.placement, pp.configs, pp.entry_name, t.team_name " +
-      "FROM player_placements pp INNER JOIN players p ON p.id = pp.player_id " +
+      "FROM player_placements pp LEFT JOIN players p ON p.id = pp.player_id " +
       "LEFT JOIN teams t ON t.id = p.team_id " +
-      "WHERE p.user_id = ? ORDER BY pp.event_date DESC, pp.id DESC LIMIT 100"
+      "WHERE pp.user_id = ? ORDER BY pp.event_date DESC, pp.id DESC LIMIT 100"
     ).bind(member.id),
     env.DB.prepare(
       "SELECT c.id, c.status, c.note, c.created_at, p.id AS player_id, " +

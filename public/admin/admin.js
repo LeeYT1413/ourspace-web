@@ -1383,6 +1383,14 @@
         wrapper.appendChild(search);
       }
 
+    } else if (field.type === "image") {
+
+      /* 圖片：上傳後存成網址（/api/checkin/images/…），舊的網址也能顯示 */
+      input = el("input");
+      input.type = "hidden";
+      input.value = value || "";
+      wrapper.appendChild(imageUploader(input, field));
+
     } else if (field.type === "textarea") {
 
       input = el("textarea");
@@ -1434,6 +1442,119 @@
     }
 
     return wrapper;
+  }
+
+
+  function imageUploader(hidden, field) {
+
+    var box = el("div", "image-field");
+    var preview = el("div", "image-preview");
+    var actions = el("div", "image-actions");
+    var status = el("span", "field-help");
+
+    function draw() {
+      clear(preview);
+      if (hidden.value) {
+        var img = el("img");
+        img.src = hidden.value;
+        img.alt = "預覽";
+        preview.appendChild(img);
+      } else {
+        /* 沒有圖片：跟官網一樣顯示名稱的第一個字（例如隊名） */
+        var source = field && field.initialFrom && box.form ? box.form.querySelector("[name='" + field.initialFrom + "']") : null;
+        var initial = source && source.value.trim() ? source.value.trim().charAt(0) : "";
+        preview.appendChild(el("span", initial ? "image-initial" : "image-empty", initial || "還沒有圖片"));
+      }
+      removeBtn.hidden = !hidden.value;
+    }
+
+    var file = el("input");
+    file.type = "file";
+    file.accept = "image/png,image/jpeg,image/webp";
+    file.hidden = true;
+
+    var uploadBtn = el("button", "btn btn-ghost btn-small", "上傳圖片");
+    uploadBtn.type = "button";
+    uploadBtn.addEventListener("click", function () { file.click(); });
+
+    var removeBtn = el("button", "btn btn-ghost btn-small", "移除");
+    removeBtn.type = "button";
+    removeBtn.addEventListener("click", function () {
+      hidden.value = "";
+      draw();
+    });
+
+    file.addEventListener("change", function () {
+
+      var picked = file.files && file.files[0];
+
+      if (!picked) {
+        return;
+      }
+
+      status.textContent = "上傳中…";
+
+      var reader = new FileReader();
+
+      reader.onload = function () {
+
+        var img = new Image();
+
+        img.onload = function () {
+
+          /* 縮到最長邊 512；PNG 保留透明背景 */
+          var scale = Math.min(1, 512 / Math.max(img.width, img.height));
+          var canvas = document.createElement("canvas");
+          var png = picked.type === "image/png";
+
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+
+          var dataUrl = png ? canvas.toDataURL("image/png") : canvas.toDataURL("image/jpeg", 0.88);
+
+          api("POST", "/api/referee/checkin/images", { mime: png ? "image/png" : "image/jpeg", data: dataUrl.split(",")[1] })
+            .then(function (res) {
+              hidden.value = res.data.url;
+              status.textContent = "";
+              draw();
+            })
+            .catch(function (error) {
+              status.textContent = "上傳失敗：" + errorText(error);
+            });
+        };
+
+        img.src = reader.result;
+      };
+
+      reader.readAsDataURL(picked);
+      file.value = "";
+    });
+
+    actions.appendChild(uploadBtn);
+    actions.appendChild(removeBtn);
+    box.appendChild(preview);
+    box.appendChild(actions);
+    box.appendChild(status);
+    box.appendChild(file);
+
+    draw();
+
+    /* 放進表單後，跟著名稱欄位即時更新預覽的第一個字 */
+    setTimeout(function () {
+      box.form = box.closest("form");
+      var source = field && field.initialFrom && box.form ? box.form.querySelector("[name='" + field.initialFrom + "']") : null;
+      if (source) {
+        source.addEventListener("input", function () {
+          if (!hidden.value) {
+            draw();
+          }
+        });
+      }
+      draw();
+    }, 0);
+
+    return box;
   }
 
 

@@ -32,6 +32,7 @@ import {
 import { requireStaff, writeAuditLog, canUsePage, MANAGER_ROLES } from "./auth.js";
 import { getMember, registerPeople, cleanEventIds, syncEventToErp } from "./member-api.js";
 import { markRankingDirty } from "./ranking.js";
+import { resolveMatches } from "./bracket-api.js";
 
 
 var MAX_NAME_LENGTH = 50;
@@ -545,6 +546,15 @@ async function handleStaff(request, url, parts, env) {
       return need("events") || saveSettle(request, env, staff, id, false);
     }
 
+    /* 連結比賽賽程（對戰表）：讀取名次和每一輪的參賽者 */
+    if (action === "bracket" && !extra && method === "POST") {
+      return need("events") || linkBracket(request, env, staff, id);
+    }
+
+    if (action === "bracket" && !extra && method === "DELETE") {
+      return need("events") || unlinkBracket(env, staff, id);
+    }
+
     if (action === "archive" && !extra && method === "POST") {
       return need("events") || saveSettle(request, env, staff, id, true);
     }
@@ -1011,6 +1021,7 @@ async function settleData(env, event) {
     },
     total: ((results[4].results || [])[0] || {}).total || 0,
     prize_options: prizeOptions,
+    bracket: await eventBracket(env, event),
     judges: judges,
     waived: waived,
     checked: checked,
@@ -1132,18 +1143,21 @@ async function saveSettle(request, env, staff, id, archive) {
 
   await env.DB.batch(statements);
 
+  var duplicateMembers = 0;
+
   if (archive) {
 
     var checkedCount = Object.keys(checkedMap).length;
 
-    /* 每一位有報到的人都要有選手資料，參賽紀錄和上位紀錄才不會漏掉：
-       會員 → 用他主要戰隊的暱稱（沒有就建立一筆），紀錄算進會員
-       非會員 → 找名字一樣、還沒連到會員的選手資料；找不到就新建一筆到選手頁
-               （之後可在「選手資料整合」連到會員，參賽和上位紀錄會一起合併過去） */
+    /* 只有「賽後紀錄裡有名次的上位者」才需要選手資料：
+       會員 → 用他主要的選手資料（沒有就建立一筆），參賽和上位都算在會員身上
+       非會員 → 找名字完全一樣、還沒連到會員的選手資料；找不到就新建一筆
+       沒有名次的人不建立資料（參賽紀錄本來就留在報名資料裡） */
     var unresolved = await env.DB.prepare(
-      "SELECT c.id AS entry_id, c.nickname, c.user_id, u.primary_team_id FROM checkin_entries c " +
+      "SELECT DISTINCT c.id AS entry_id, c.nickname, c.user_id, u.primary_team_id, r.rank_label FROM checkin_results r " +
+      "INNER JOIN checkin_entries c ON c.id = r.entry_id " +
       "LEFT JOIN users u ON u.id = c.user_id " +
-      "WHERE c.event_id = ? AND c.checked_in = 1 AND c.player_id IS NULL"
+      "WHERE r.event_id = ? AND c.player_id IS NULL"
     )
     .bind(id)
     .all();
@@ -1151,6 +1165,10 @@ async function saveSettle(request, env, staff, id, archive) {
     for (var u = 0; u < (unresolved.results || []).length; u++) {
 
       var person = unresolved.results[u];
+
+      if (!rankNumber(person.rank_label)) {
+        continue;
+      }
       var found = null;
 
       if (person.user_id) {
@@ -1169,8 +1187,8 @@ async function saveSettle(request, env, staff, id, archive) {
 
       if (!playerId) {
         var createdPlayer = await env.DB.prepare(
-          "INSERT INTO players (user_id, player_name, nickname, team_id) VALUES (?, ?, ?, ?)"
-        ).bind(person.user_id || null, person.nickname, person.nickname, person.user_id ? person.primary_team_id || null : null).run();
+          "INSERT INTO players (user_id, player_name, nickname, team_id, created_by_event) VALUES (?, ?, ?, ?, ?)"
+        ).bind(person.user_id || null, person.nickname, person.nickname, person.user_id ? person.primary_team_id || null : null, id).run();
         playerId = createdPlayer.meta.last_row_id;
       }
 
@@ -1198,9 +1216,9 @@ async function saveSettle(request, env, staff, id, archive) {
 
       archiveStatements.push(
         env.DB.prepare(
-          "INSERT INTO player_placements (player_id, event_date, event_name, participant_count, placement, configs, entry_name) " +
-          "VALUES (?, ?, ?, ?, ?, ?, ?)"
-        ).bind(row.player_id, event.event_date, event.title, checkedCount, rank, row.configs || null, row.entry_name || null)
+          "INSERT INTO player_placements (player_id, event_date, event_name, participant_count, placement, configs, entry_name, user_id) " +
+          "VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT user_id FROM players WHERE id = ?))"
+        ).bind(row.player_id, event.event_date, event.title, checkedCount, rank, row.configs || null, row.entry_name || null, row.player_id)
       );
 
       archiveStatements.push(
@@ -1220,12 +1238,22 @@ async function saveSettle(request, env, staff, id, archive) {
     await markRankingDirty(env);
     await writeAuditLog(env, staff, "archive", "checkin_events", id, { checked: checkedCount });
 
+    /* 同一位會員、同一天、同名稱、同人數的上位紀錄有兩筆以上 → 很可能重複，提醒處理 */
+    var dup = await env.DB.prepare(
+      "SELECT COUNT(DISTINCT pp.user_id) AS n FROM player_placements pp " +
+      "WHERE pp.user_id IS NOT NULL AND pp.event_date = ? AND pp.event_name = ? AND pp.participant_count = ? " +
+      "AND pp.user_id IN (SELECT user_id FROM player_placements WHERE event_date = ? AND event_name = ? AND participant_count = ? " +
+      "AND user_id IS NOT NULL GROUP BY user_id HAVING COUNT(*) > 1)"
+    ).bind(event.event_date, event.title, checkedCount, event.event_date, event.title, checkedCount).first();
+
+    duplicateMembers = dup ? Number(dup.n) || 0 : 0;
+
   } else {
 
     await writeAuditLog(env, staff, "settle", "checkin_events", id, null);
   }
 
-  return jsonResponse({ success: true, data: await settleData(env, await getEvent(env, id)) });
+  return jsonResponse({ success: true, duplicate_members: duplicateMembers, data: await settleData(env, await getEvent(env, id)) });
 
 }
 
@@ -1252,7 +1280,20 @@ async function unarchive(env, staff, id) {
       "(SELECT placement_id FROM checkin_results WHERE event_id = ? AND placement_id IS NOT NULL)"
     ).bind(id),
     env.DB.prepare("UPDATE checkin_results SET placement_id = NULL WHERE event_id = ?").bind(id),
-    env.DB.prepare("UPDATE checkin_events SET archived_at = NULL, archived_by = NULL WHERE id = ?").bind(id)
+    env.DB.prepare("UPDATE checkin_events SET archived_at = NULL, archived_by = NULL WHERE id = ?").bind(id),
+    /* 這場封存時自動建立、現在已經沒有任何上位紀錄的非會員選手資料 → 清掉
+       （名次誤植時，解除封存、改正、再封存，不會留下多餘的選手資料） */
+    env.DB.prepare(
+      "UPDATE checkin_entries SET player_id = NULL WHERE event_id = ? AND player_id IN " +
+      "(SELECT p.id FROM players p WHERE p.created_by_event = ? AND p.user_id IS NULL " +
+      "AND NOT EXISTS (SELECT 1 FROM player_placements pp WHERE pp.player_id = p.id))"
+    ).bind(id, id),
+    env.DB.prepare(
+      "DELETE FROM players WHERE created_by_event = ? AND user_id IS NULL " +
+      "AND NOT EXISTS (SELECT 1 FROM player_placements pp WHERE pp.player_id = players.id) " +
+      "AND NOT EXISTS (SELECT 1 FROM checkin_entries c WHERE c.player_id = players.id) " +
+      "AND NOT EXISTS (SELECT 1 FROM player_claims pc WHERE pc.player_id = players.id)"
+    ).bind(id)
   ]);
 
   await syncEventToErp(env, id, false);
@@ -2040,4 +2081,200 @@ async function deleteTier(env, staff, tierId) {
   await writeAuditLog(env, staff, "delete_tier", "checkin_events", tier.event_id, { prize: tier.prize });
 
   return lotteryStatus(env, tier.event_id);
+}
+
+
+
+/* =========================================================
+   場次 ↔ 比賽賽程（對戰表）
+   貼上對戰表的賽事 ID：讀取名次（帶入賽後紀錄）、有幾輪、每一輪的參賽者
+   每一輪的參賽者存在 checkin_event_rounds，之後依輪次發點數用
+========================================================= */
+
+async function eventBracket(env, event) {
+
+  if (!event.bracket_code) {
+    return null;
+  }
+
+  var rows = await env.DB.prepare(
+    "SELECT round, round_label, entry_name, entry_id, won FROM checkin_event_rounds WHERE event_id = ? ORDER BY round, id"
+  ).bind(event.id).all().catch(function () { return { results: [] }; });
+
+  return { code: event.bracket_code, rounds: groupRounds(rows.results || []) };
+}
+
+
+function groupRounds(rows) {
+
+  var rounds = [];
+  var byRound = {};
+
+  rows.forEach(function (row) {
+    if (!byRound[row.round]) {
+      byRound[row.round] = { round: row.round, label: row.round_label, players: [] };
+      rounds.push(byRound[row.round]);
+    }
+    byRound[row.round].players.push({ name: row.entry_name, entry_id: row.entry_id, won: Number(row.won) === 1 });
+  });
+
+  return rounds;
+}
+
+
+async function linkBracket(request, env, staff, eventId) {
+
+  var body = (await parseJsonBody(request)) || {};
+  var code = cleanText(body.code);
+
+  if (!env.BRACKET_DB) {
+    return errorResponse("BRACKET_NOT_READY", 503);
+  }
+
+  if (!/^[A-Za-z0-9]{6,20}$/.test(code)) {
+    return errorResponse("INVALID_BRACKET", 400);
+  }
+
+  var check = await getOpenEvent(env, eventId);
+
+  if (check.response) {
+    return check.response;
+  }
+
+  var bracket = await env.BRACKET_DB.prepare("SELECT id, title, format FROM brackets WHERE share_code = ?").bind(code).first();
+
+  if (!bracket) {
+    return errorResponse("BRACKET_NOT_FOUND", 404);
+  }
+
+  var matchRows = (await env.BRACKET_DB.prepare("SELECT * FROM bracket_matches WHERE bracket_id = ? ORDER BY sort")
+    .bind(bracket.id).all()).results || [];
+
+  var resolved = resolveMatches(matchRows);
+  var mainRounds = matchRows.reduce(function (max, m) {
+    return m.code.charAt(0) === "R" ? Math.max(max, m.round) : max;
+  }, 1);
+
+  /* 報到名單：名字一樣（不分大小寫）就對到那一筆報名 */
+  var entries = (await env.DB.prepare(
+    "SELECT id, nickname FROM checkin_entries WHERE event_id = ? AND checked_in = 1"
+  ).bind(eventId).all()).results || [];
+
+  var byName = {};
+
+  entries.forEach(function (e) {
+    byName[String(e.nickname).trim().toLowerCase()] = e.id;
+  });
+
+  /* 每一輪真的有上場的人（輪空晉級的不算那一輪），以及有沒有贏 */
+  var rows = [];
+
+  resolved.list.forEach(function (m) {
+
+    if (m.state !== "live" && m.state !== "done") {
+      return;
+    }
+
+    var isMain = m.code.charAt(0) === "R";
+    var round = isMain ? m.round : mainRounds + 1;
+    var label = isMain ? "Round " + m.round : "名次賽";
+
+    ["a", "b"].forEach(function (side) {
+
+      var name = m[side];
+
+      if (!name || m[side + "_state"] !== "ok") {
+        return;
+      }
+
+      rows.push({
+        round: round,
+        label: label,
+        name: name,
+        entry_id: byName[String(name).trim().toLowerCase()] || null,
+        won: m.winner === side ? 1 : 0
+      });
+    });
+  });
+
+  /* 同一輪同一個人只記一次（名次賽可能打兩場） */
+  var seen = {};
+
+  rows = rows.filter(function (r) {
+    var k = r.round + "|" + r.name;
+    if (seen[k]) {
+      if (r.won) {
+        seen[k].won = 1;
+      }
+      return false;
+    }
+    seen[k] = r;
+    return true;
+  });
+
+  var statements = [
+    env.DB.prepare("DELETE FROM checkin_event_rounds WHERE event_id = ?").bind(eventId),
+    env.DB.prepare("UPDATE checkin_events SET bracket_code = ? WHERE id = ?").bind(code, eventId)
+  ];
+
+  rows.forEach(function (r) {
+    statements.push(env.DB.prepare(
+      "INSERT INTO checkin_event_rounds (event_id, round, round_label, entry_name, entry_id, won) VALUES (?, ?, ?, ?, ?, ?)"
+    ).bind(eventId, r.round, r.label, r.name, r.entry_id, r.won));
+  });
+
+  await env.DB.batch(statements);
+
+  /* 名次（給賽後紀錄帶入） */
+  function nameOf(codeKey, key) {
+    var item = resolved.map[codeKey];
+    var value = item && item[key];
+    return value && value.name ? value.name : null;
+  }
+
+  var final = "R" + mainRounds + "-1";
+  var standings = [nameOf(final, "win"), nameOf(final, "lose")];
+
+  if (resolved.map.T3) {
+    standings.push(nameOf("T3", "win"), nameOf("T3", "lose"));
+  }
+
+  if (resolved.map.P5) {
+    standings.push(nameOf("P5", "win"), nameOf("P5", "lose"), nameOf("P7", "win"), nameOf("P7", "lose"));
+  }
+
+  await writeAuditLog(env, staff, "link_bracket", "checkin_events", eventId, { code: code });
+
+  return jsonResponse({
+    success: true,
+    data: {
+      code: code,
+      title: bracket.title,
+      rounds: groupRounds(rows.map(function (r) {
+        return { round: r.round, round_label: r.label, entry_name: r.name, entry_id: r.entry_id, won: r.won };
+      })),
+      standings: standings.map(function (name) {
+        return { name: name, entry_id: name ? byName[String(name).trim().toLowerCase()] || null : null };
+      })
+    }
+  });
+}
+
+
+async function unlinkBracket(env, staff, eventId) {
+
+  var check = await getOpenEvent(env, eventId);
+
+  if (check.response) {
+    return check.response;
+  }
+
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM checkin_event_rounds WHERE event_id = ?").bind(eventId),
+    env.DB.prepare("UPDATE checkin_events SET bracket_code = NULL WHERE id = ?").bind(eventId)
+  ]);
+
+  await writeAuditLog(env, staff, "unlink_bracket", "checkin_events", eventId, null);
+
+  return jsonResponse({ success: true });
 }

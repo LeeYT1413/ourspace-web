@@ -84,6 +84,10 @@ export async function handleMemberAdminApi(request, url, env) {
     return sysadminOnly(staff) || integration(url, env);
   }
 
+  if (parts[0] === "duplicates" && method === "GET") {
+    return sysadminOnly(staff) || jsonResponse({ success: true, data: await duplicateGroups(env, null) });
+  }
+
   if (parts[0] === "multi" && method === "GET") {
     return sysadminOnly(staff) || multiPlayers(env);
   }
@@ -468,7 +472,7 @@ async function memberDetail(env, staff, id) {
       " WHERE (c.user_id = ? OR c.player_id IN (SELECT id FROM players WHERE user_id = ?)) " +
       " AND c.checked_in = 1 AND e.archived_at IS NOT NULL) + " +
       "(SELECT COUNT(*) FROM manual_games g WHERE g.user_id = ?) AS games, " +
-      "(SELECT COUNT(*) FROM player_placements pp INNER JOIN players p ON p.id = pp.player_id WHERE p.user_id = ?) AS wins, " +
+      "(SELECT COUNT(*) FROM player_placements pp WHERE pp.user_id = ?) AS wins, " +
       "(SELECT COUNT(*) FROM checkin_entries c INNER JOIN checkin_events e ON e.id = c.event_id " +
       " WHERE c.user_id = ? AND e.archived_at IS NULL AND c.checked_in = 0) AS pending"
     ).bind(id, id, id, id, id),
@@ -609,13 +613,18 @@ async function linkPlayer(request, env, staff, userId, link) {
 
   } else {
 
-    await env.DB.prepare("UPDATE players SET user_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?")
-      .bind(playerId, userId)
-      .run();
+    await env.DB.batch([
+      env.DB.prepare("UPDATE players SET user_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?").bind(playerId, userId),
+      env.DB.prepare("UPDATE player_placements SET user_id = NULL WHERE player_id = ? AND user_id = ?").bind(playerId, userId)
+    ]);
   }
 
   await markRankingDirty(env);
   await writeAuditLog(env, staff, link ? "link_player" : "unlink_player", "players", playerId, { user_id: userId });
+
+  if (link) {
+    return jsonResponse({ success: true, duplicates: (await duplicateGroups(env, userId)).length });
+  }
 
   return jsonResponse({ success: true });
 }
@@ -795,15 +804,33 @@ async function attachPlayer(env, userId, playerId) {
   var target = await mainPlayer(env, userId, source.id);
 
   if (!target) {
-    await env.DB.prepare("UPDATE players SET user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-      .bind(userId, source.id)
-      .run();
+    await env.DB.batch([
+      env.DB.prepare("UPDATE players SET user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(userId, source.id),
+      env.DB.prepare("UPDATE player_placements SET user_id = ? WHERE player_id = ?").bind(userId, source.id)
+    ]);
     return source.id;
   }
 
   await mergePlayers(env, source.id, target.id, userId);
 
   return target.id;
+}
+
+
+/* 會員的上位紀錄裡，日期、比賽名稱、參賽人數都一樣的 → 很可能重複 */
+export async function duplicateGroups(env, userId) {
+
+  var where = userId ? "pp.user_id = ?" : "pp.user_id IS NOT NULL";
+  var statement = env.DB.prepare(
+    "SELECT pp.user_id, u.nickname, pp.event_date, pp.event_name, pp.participant_count, COUNT(*) AS n, " +
+    "GROUP_CONCAT(pp.id) AS ids FROM player_placements pp LEFT JOIN users u ON u.id = pp.user_id " +
+    "WHERE " + where + " GROUP BY pp.user_id, pp.event_date, pp.event_name, pp.participant_count " +
+    "HAVING COUNT(*) > 1 ORDER BY pp.event_date DESC LIMIT 200"
+  );
+
+  var rows = await (userId ? statement.bind(userId) : statement).all();
+
+  return rows.results || [];
 }
 
 
@@ -886,7 +913,7 @@ export async function mergePlayers(env, fromId, intoId, userId) {
       "UPDATE player_placements SET entry_name = COALESCE(entry_name, " +
       "(SELECT COALESCE(NULLIF(nickname, ''), player_name) FROM players WHERE id = ?)) WHERE player_id = ?"
     ).bind(intoId, intoId),
-    env.DB.prepare("UPDATE player_placements SET player_id = ? WHERE player_id = ?").bind(intoId, fromId),
+    env.DB.prepare("UPDATE player_placements SET player_id = ?, user_id = ? WHERE player_id = ?").bind(intoId, userId || null, fromId),
     env.DB.prepare(
       "UPDATE checkin_entries SET player_id = ?, user_id = COALESCE(user_id, ?) WHERE player_id = ?"
     ).bind(intoId, userId || null, fromId),
@@ -1004,12 +1031,20 @@ async function memberRecords(env, userId) {
     env.DB.prepare(
       "SELECT pp.id, pp.event_date, pp.event_name, pp.participant_count, pp.placement, pp.entry_name, pp.configs, " +
       "CASE WHEN EXISTS (SELECT 1 FROM checkin_results r WHERE r.placement_id = pp.id) THEN 'checkin' ELSE 'manual' END AS source " +
-      "FROM player_placements pp INNER JOIN players p ON p.id = pp.player_id " +
-      "WHERE p.user_id = ? ORDER BY pp.event_date DESC, pp.id DESC LIMIT 200"
+      "FROM player_placements pp " +
+      "WHERE pp.user_id = ? ORDER BY pp.event_date DESC, pp.id DESC LIMIT 200"
     ).bind(userId)
   ]);
 
-  return jsonResponse({ success: true, games: results[0].results || [], placements: results[1].results || [] });
+  /* 可能重複的上位紀錄（同一天、同名稱、同人數），給畫面標示 */
+  var dup = await duplicateGroups(env, userId);
+
+  return jsonResponse({
+    success: true,
+    games: results[0].results || [],
+    placements: results[1].results || [],
+    duplicates: dup.map(function (g) { return String(g.ids).split(",").map(Number); })
+  });
 }
 
 
@@ -1094,9 +1129,9 @@ async function addManualPlacement(request, env, staff, userId) {
 
   var statements = [
     env.DB.prepare(
-      "INSERT INTO player_placements (player_id, event_date, event_name, participant_count, placement, entry_name, configs) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?)"
-    ).bind(playerId, date, name, total, placement, entryName, configs.length ? JSON.stringify(configs) : null)
+      "INSERT INTO player_placements (player_id, event_date, event_name, participant_count, placement, entry_name, configs, user_id) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    ).bind(playerId, date, name, total, placement, entryName, configs.length ? JSON.stringify(configs) : null, userId)
   ];
 
   /* 同一場順便補一筆參賽紀錄（有上位當然有參賽） */
@@ -1120,8 +1155,8 @@ async function deleteMemberPlacement(env, staff, userId, placementId) {
 
   /* 報到系統封存寫入的，請用「解除封存」撤回，這裡只刪手動補登的 */
   var row = await env.DB.prepare(
-    "SELECT pp.id FROM player_placements pp INNER JOIN players p ON p.id = pp.player_id " +
-    "WHERE pp.id = ? AND p.user_id = ? AND NOT EXISTS (SELECT 1 FROM checkin_results r WHERE r.placement_id = pp.id)"
+    "SELECT pp.id FROM player_placements pp " +
+    "WHERE pp.id = ? AND pp.user_id = ? AND NOT EXISTS (SELECT 1 FROM checkin_results r WHERE r.placement_id = pp.id)"
   ).bind(placementId, userId).first();
 
   if (!row) {

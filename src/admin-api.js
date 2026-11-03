@@ -23,6 +23,20 @@ import {
 import { markRankingDirty } from "./ranking.js";
 
 
+/* 後台「選手」頁改了選手資料或上位紀錄：上位紀錄的會員編號跟著選手資料的連結 */
+async function syncPlacementUsers(env, resource) {
+
+  if (resource !== "players" && resource !== "player_placements") {
+    return;
+  }
+
+  await env.DB.prepare(
+    "UPDATE player_placements SET user_id = (SELECT p.user_id FROM players p WHERE p.id = player_placements.player_id) " +
+    "WHERE user_id IS NOT (SELECT p.user_id FROM players p WHERE p.id = player_placements.player_id)"
+  ).run();
+}
+
+
 /* 這些資料改了，排行榜要重算 */
 var RANKING_RESOURCES = ["players", "player_placements", "teams"];
 
@@ -664,6 +678,7 @@ async function createRecord(request, env, staff, resource, config) {
   await writeAuditLog(env, staff, "create", resource, id, collected.values);
 
   if (RANKING_RESOURCES.indexOf(resource) !== -1) {
+    await syncPlacementUsers(env, resource);
     await markRankingDirty(env);
   }
 
@@ -731,6 +746,7 @@ async function updateRecord(request, env, staff, resource, config, id) {
   await writeAuditLog(env, staff, "update", resource, id, collected.values);
 
   if (RANKING_RESOURCES.indexOf(resource) !== -1) {
+    await syncPlacementUsers(env, resource);
     await markRankingDirty(env);
   }
 
@@ -760,6 +776,7 @@ async function deleteRecord(env, staff, resource, config, id) {
   await writeAuditLog(env, staff, "delete", resource, id, existing);
 
   if (RANKING_RESOURCES.indexOf(resource) !== -1) {
+    await syncPlacementUsers(env, resource);
     await markRankingDirty(env);
   }
 
