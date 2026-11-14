@@ -152,7 +152,11 @@ var RESOURCES = {
       "(SELECT COUNT(*) FROM player_placements pp WHERE pp.player_id = players.id) AS upper_count, " +
       "(SELECT COUNT(*) FROM checkin_entries c INNER JOIN checkin_events e ON e.id = c.event_id " +
       " WHERE c.player_id = players.id AND c.checked_in = 1 AND e.archived_at IS NOT NULL) AS games, " +
-      "(SELECT u.nickname FROM users u WHERE u.id = players.user_id) AS member_name " +
+      "(SELECT u.nickname FROM users u WHERE u.id = players.user_id) AS member_name, " +
+      /* 最新參賽：報到系統或上位紀錄裡最近的日期 */
+      "(SELECT MAX(d) FROM (SELECT pp.event_date AS d FROM player_placements pp WHERE pp.player_id = players.id " +
+      " UNION ALL SELECT e.event_date FROM checkin_entries c INNER JOIN checkin_events e ON e.id = c.event_id " +
+      " WHERE c.player_id = players.id AND c.checked_in = 1)) AS last_played " +
       "FROM players",
     columns: {
       player_name: { type: "text", required: true, max: 100 },
@@ -529,6 +533,24 @@ export async function handleAdminApi(request, url, env) {
   var resource = parts[2];
   var id = parts[3];
 
+  /* 舊資料（舊賽事、戰隊聯賽）：匯出 CSV、轉成已封存場次（系統管理員） */
+  if (resource === "legacy") {
+
+    if (staff.role !== "sysadmin") {
+      return errorResponse("FORBIDDEN", 403);
+    }
+
+    if (id === "export" && parts[4] && method === "GET") {
+      return exportLegacy(env, parts[4]);
+    }
+
+    if (id === "convert" && method === "POST") {
+      return convertLegacy(env, staff);
+    }
+
+    return errorResponse("API_NOT_FOUND", 404);
+  }
+
   if (parts.length > 4) {
     return null;
   }
@@ -809,3 +831,146 @@ async function getLookups(env) {
 }
 
 
+
+
+
+/* =========================================================
+   舊資料：賽事報名（舊）、戰隊聯賽
+   - 匯出 CSV（含隊名、選手名稱方便閱讀）
+   - 舊賽事轉成「已封存場次」：報名 → 報到名單，名次 → 賽後紀錄
+     （沒有參賽人數，不寫入上位紀錄、不影響排行榜）
+========================================================= */
+
+var LEGACY_EXPORTS = {
+  tournaments: "SELECT * FROM tournaments ORDER BY id",
+  tournament_registrations: "SELECT r.*, t.title AS tournament_title FROM tournament_registrations r " +
+    "LEFT JOIN tournaments t ON t.id = r.tournament_id ORDER BY r.tournament_id, r.id",
+  tournament_results: "SELECT r.*, t.title AS tournament_title, COALESCE(p.nickname, p.player_name) AS player_name, tm.team_name " +
+    "FROM tournament_results r LEFT JOIN tournaments t ON t.id = r.tournament_id " +
+    "LEFT JOIN players p ON p.id = r.player_id LEFT JOIN teams tm ON tm.id = r.team_id ORDER BY r.tournament_id, r.final_rank",
+  league_matches: "SELECT m.*, t.title AS tournament_title, a.team_name AS team_a_name, b.team_name AS team_b_name " +
+    "FROM league_matches m LEFT JOIN tournaments t ON t.id = m.tournament_id " +
+    "LEFT JOIN teams a ON a.id = m.team_a_id LEFT JOIN teams b ON b.id = m.team_b_id ORDER BY m.tournament_id, m.round_number, m.match_number"
+};
+
+
+async function exportLegacy(env, table) {
+
+  if (!Object.prototype.hasOwnProperty.call(LEGACY_EXPORTS, table)) {
+    return errorResponse("NOT_FOUND", 404);
+  }
+
+  var rows = (await env.DB.prepare(LEGACY_EXPORTS[table]).all()).results || [];
+  var columns = rows.length ? Object.keys(rows[0]) : [];
+
+  function cell(value) {
+    var text = value === null || value === undefined ? "" : String(value);
+    return /[",\n\r]/.test(text) ? "\"" + text.replace(/"/g, "\"\"") + "\"" : text;
+  }
+
+  /* 開頭加 BOM，Excel 打開中文不會亂碼 */
+  var csv = "\uFEFF" + [columns.join(",")].concat(rows.map(function (row) {
+    return columns.map(function (key) { return cell(row[key]); }).join(",");
+  })).join("\r\n");
+
+  return new Response(csv, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": "attachment; filename=\"ourspace-" + table + ".csv\"",
+      "Cache-Control": "no-store"
+    }
+  });
+}
+
+
+async function convertLegacy(env, staff) {
+
+  var tournaments = (await env.DB.prepare("SELECT * FROM tournaments ORDER BY id").all()).results || [];
+  var converted = 0;
+  var skipped = 0;
+
+  for (var i = 0; i < tournaments.length; i++) {
+
+    var t = tournaments[i];
+    var marker = "legacy-tournament:" + t.id;
+    var exists = await env.DB.prepare("SELECT id FROM checkin_events WHERE settle_note = ?").bind(marker).first();
+
+    if (exists) {
+      skipped++;
+      continue;
+    }
+
+    var start = String(t.start_at || t.created_at || "");
+    var date = /^\d{4}-\d{2}-\d{2}/.test(start) ? start.slice(0, 10) : String(t.created_at || "").slice(0, 10);
+    var time = /\d{2}:\d{2}/.test(start.slice(11, 16)) ? start.slice(11, 16) : null;
+    var now = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 16).replace("T", " ");
+
+    var created = await env.DB.prepare(
+      "INSERT INTO checkin_events (event_date, title, start_time, event_type, fee, is_public, settle_note, settled_at, ended_at, archived_at, archived_by) " +
+      "VALUES (?, ?, ?, 'big', ?, 0, ?, ?, ?, ?, ?)"
+    ).bind(date, t.title, time, Number(t.entry_fee) || 0, marker, now, now, now, staff.display_name || "系統").run();
+
+    var eventId = created.meta.last_row_id;
+
+    /* 報名 → 報到名單（名字重複的只留一筆） */
+    var regs = (await env.DB.prepare(
+      "SELECT registration_name FROM tournament_registrations WHERE tournament_id = ? ORDER BY id"
+    ).bind(t.id).all()).results || [];
+
+    var results = (await env.DB.prepare(
+      "SELECT r.final_rank, r.player_id, COALESCE(p.nickname, p.player_name, tm.team_name) AS name, p.user_id " +
+      "FROM tournament_results r LEFT JOIN players p ON p.id = r.player_id LEFT JOIN teams tm ON tm.id = r.team_id " +
+      "WHERE r.tournament_id = ? ORDER BY r.final_rank"
+    ).bind(t.id).all()).results || [];
+
+    var names = {};
+    var statements = [];
+
+    regs.forEach(function (r) {
+      var name = String(r.registration_name || "").trim();
+      if (name && !names[name.toLowerCase()]) {
+        names[name.toLowerCase()] = { name: name, player_id: null, user_id: null };
+      }
+    });
+
+    results.forEach(function (r) {
+      var name = String(r.name || "").trim();
+      if (!name) {
+        return;
+      }
+      var key = name.toLowerCase();
+      names[key] = names[key] || { name: name, player_id: null, user_id: null };
+      names[key].player_id = r.player_id || names[key].player_id;
+      names[key].user_id = r.user_id || names[key].user_id;
+    });
+
+    Object.keys(names).forEach(function (key) {
+      var n = names[key];
+      statements.push(env.DB.prepare(
+        "INSERT OR IGNORE INTO checkin_entries (event_id, nickname, checked_in, source, player_id, user_id) VALUES (?, ?, 1, 'legacy', ?, ?)"
+      ).bind(eventId, n.name, n.player_id, n.user_id));
+    });
+
+    results.forEach(function (r, index) {
+      var name = String(r.name || "").trim();
+      if (!name || !r.final_rank) {
+        return;
+      }
+      statements.push(env.DB.prepare(
+        "INSERT INTO checkin_results (event_id, sort, rank_label, entry_id) " +
+        "VALUES (?, ?, ?, (SELECT id FROM checkin_entries WHERE event_id = ? AND nickname = ? COLLATE NOCASE))"
+      ).bind(eventId, index, "第" + r.final_rank + "名", eventId, name));
+    });
+
+    if (statements.length) {
+      await env.DB.batch(statements);
+    }
+
+    converted++;
+  }
+
+  await writeAuditLog(env, staff, "convert_legacy", "tournaments", null, { converted: converted, skipped: skipped });
+
+  return jsonResponse({ success: true, converted: converted, skipped: skipped, total: tournaments.length });
+}

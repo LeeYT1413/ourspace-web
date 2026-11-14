@@ -3682,3 +3682,20 @@ button.bm-tag {
   color: var(--brown);
   font-size: 12px;
 }
+
+
+/* 對戰表：滑鼠變成小手，按住拖曳移動 */
+@media (hover: hover) and (pointer: fine) {
+  .bracket-scroll {
+    cursor: grab;
+  }
+
+  .bracket-scroll.is-dragging {
+    cursor: grabbing;
+    user-select: none;
+  }
+
+  .bracket-scroll button {
+    cursor: pointer;
+  }
+}

@@ -515,3 +515,106 @@ input[type="datetime-local"] {
   font-size: 34px;
   font-weight: 900;
 }
+
+/* 清單排序：點欄位標題 */
+.th-sort {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.th-sort:hover,
+.th-sort.active {
+  color: #E9B95A;
+}
+
+/* 標題旁的按鈕（例如選手頁的快速登錄） */
+.view-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* 快速登錄上位 */
+.qp-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 12px;
+  overflow-y: auto;
+  background: rgba(8, 14, 28, 0.7);
+}
+
+.qp-sheet {
+  width: min(560px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  background: #14213A;
+  border: 1px solid rgba(241, 230, 210, 0.2);
+  border-radius: 18px;
+}
+
+.qp-head,
+.qp-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.qp-head h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.qp-meta {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr 0.8fr;
+  gap: 8px;
+}
+
+.qp-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.qp-row {
+  display: grid;
+  grid-template-columns: 80px 1fr auto;
+  gap: 6px;
+}
+
+.qp-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.qp-match {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.qp-actions .btn {
+  flex: 1;
+}
+
+@media (max-width: 520px) {
+  .qp-meta {
+    grid-template-columns: 1fr;
+  }
+}
+
+.qp-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}

@@ -630,6 +630,41 @@ function eventGroup(event, today) {
 }
 
 
+/* 賽後紀錄缺什麼（封存前檢查用） */
+async function missingSettle(env, id, placements, wins, checkedCount) {
+
+  var missing = [];
+
+  if (placements.some(function (p) { return !p.entry_id; })) {
+    missing.push("有名次還沒選得獎者");
+  }
+
+  if (placements.some(function (p) { return !p.prize; })) {
+    missing.push("有名次還沒填獎品");
+  }
+
+  if (wins.some(function (w) { return !w.prize; })) {
+    missing.push("有中獎者還沒填獎品");
+  }
+
+  var info = await env.DB.prepare(
+    "SELECT (SELECT COUNT(*) FROM checkin_event_prizes WHERE event_id = ?) AS prizes, " +
+    "(SELECT COALESCE(SUM(MAX(t.qty - (SELECT COUNT(*) FROM checkin_lottery_wins w WHERE w.tier_id = t.id), 0)), 0) " +
+    " FROM checkin_lottery_tiers t WHERE t.event_id = ? AND COALESCE(t.min_players, 0) <= ?) AS undrawn"
+  ).bind(id, id, checkedCount).first().catch(function () { return null; });
+
+  if (info && Number(info.prizes) > 0 && !placements.length) {
+    missing.push("還沒填上位者");
+  }
+
+  if (info && Number(info.undrawn) > 0) {
+    missing.push("還有抽獎獎項沒抽出中獎者");
+  }
+
+  return missing;
+}
+
+
 async function listEvents(env) {
 
   var today = taiwanToday();
@@ -639,9 +674,17 @@ async function listEvents(env) {
     "e.reg_deadline, e.ended_at, e.archived_at, e.settled_at, " +
     "(SELECT COUNT(*) FROM checkin_entries c WHERE c.event_id = e.id) AS total, " +
     "(SELECT COUNT(*) FROM checkin_entries c WHERE c.event_id = e.id AND c.checked_in = 1) AS checked, " +
-    "(SELECT COUNT(*) FROM checkin_entries c WHERE c.event_id = e.id AND c.player_id IS NOT NULL) AS linked " +
+    "(SELECT COUNT(*) FROM checkin_entries c WHERE c.event_id = e.id AND c.player_id IS NOT NULL) AS linked, " +
+    /* 資料未齊：名次沒選人或沒填獎品、有設獎品卻沒填上位者、中獎者沒填獎品、抽獎獎項還沒抽完 */
+    "(CASE WHEN EXISTS (SELECT 1 FROM checkin_results r WHERE r.event_id = e.id AND (r.entry_id IS NULL OR COALESCE(r.prize, '') = '')) " +
+    " OR (EXISTS (SELECT 1 FROM checkin_event_prizes p WHERE p.event_id = e.id) AND NOT EXISTS (SELECT 1 FROM checkin_results r WHERE r.event_id = e.id)) " +
+    " OR EXISTS (SELECT 1 FROM checkin_lottery_wins w WHERE w.event_id = e.id AND COALESCE(w.prize, '') = '') " +
+    " OR EXISTS (SELECT 1 FROM checkin_lottery_tiers t WHERE t.event_id = e.id " +
+    "   AND COALESCE(t.min_players, 0) <= (SELECT COUNT(*) FROM checkin_entries c WHERE c.event_id = e.id AND c.checked_in = 1) " +
+    "   AND t.qty > (SELECT COUNT(*) FROM checkin_lottery_wins w WHERE w.tier_id = t.id)) " +
+    " THEN 1 ELSE 0 END) AS incomplete " +
     "FROM checkin_events e " +
-    "WHERE e.event_date >= date(?, '-60 days') OR e.archived_at IS NULL " +
+    "WHERE e.event_date >= date(?, '-60 days') OR e.archived_at IS NULL OR e.settle_note LIKE 'legacy-tournament:%' " +
     "ORDER BY e.event_date ASC, COALESCE(e.start_time, '') ASC, e.id ASC"
   )
   .bind(today)
@@ -1115,6 +1158,16 @@ async function saveSettle(request, env, staff, id, archive) {
       ? { id: Number(item.id), prize: cleanText(item.prize).slice(0, 100) || null }
       : null;
   });
+
+  /* 封存前檢查：獎品、得獎者、中獎者都要填齊 */
+  if (archive) {
+
+    var missing = await missingSettle(env, id, placements, winPrizes, Object.keys(checkedMap).length);
+
+    if (missing.length) {
+      return jsonResponse({ success: false, error: "INCOMPLETE", data: { missing: missing } }, 400);
+    }
+  }
 
   var now = taiwanNow();
 

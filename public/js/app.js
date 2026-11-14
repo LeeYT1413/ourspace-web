@@ -219,6 +219,17 @@
     return "plain";
   }
 
+  /* 比較兩個名字是不是一樣：忽略空白、全形半形（例如「｜」和「|」） */
+  function sameName(a, b) {
+    function norm(text) {
+      return String(text || "")
+        .replace(/[\uFF01-\uFF5E]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+        .replace(/\s+/g, "")
+        .toLowerCase();
+    }
+    return norm(a) === norm(b);
+  }
+
   /* 上位紀錄的配置（存成 JSON 陣列） */
   function configText(value) {
     try {
@@ -335,9 +346,6 @@
       ["about", "關於我們"]
     ];
 
-    if (isSysadmin()) {
-      items.push(["league", "戰隊聯賽"]);
-    }
 
     clear(links);
 
@@ -467,7 +475,8 @@
       teams: renderTeams,
       news: renderNews,
       about: renderAbout,
-      league: renderLeague,
+      /* 戰隊聯賽頁已移除：舊網址回到首頁 */
+      league: renderHome,
       brackets: renderBrackets,
       "bracket-new": function () { renderBracketForm(null); },
       "bracket-edit": renderBracketForm,
@@ -847,7 +856,7 @@
     clear(app);
 
     app.appendChild(pageTitle("窩室賽程", "EVENTS"));
-    app.appendChild(h("p", { class: "lead", text: "勾選想參加的大型賽事，可以一次報名多場、幫朋友一起報。" }));
+    app.appendChild(h("p", { class: "lead", text: "勾選想報名的賽事" }));
 
     if (!state.member) {
       app.appendChild(h("div", { class: "login-hint" }, [
@@ -954,7 +963,7 @@
         type: "button",
         disabled: !state.selected.length,
         onClick: function () { if (state.member) { openMemberSignup(events); } else { openSignup(events); } },
-        text: state.selected.length ? "報名" : "先勾選要報名的大型賽事"
+        text: state.selected.length ? "報名" : "一鍵報名賽事"
       })
     ]);
 
@@ -1339,7 +1348,9 @@
                   h("div", { class: "grow" }, [
                     h("strong", { text: row.event_name }),
                     h("span", { class: "muted small", text: dateLabel(row.event_date) + "・" + row.participant_count + " 人參賽" }),
-                    row.entry_name ? h("span", { class: "muted small entry-name", text: "參賽名稱：" + row.entry_name }) : null,
+                    /* 參賽名稱跟平常用的暱稱不一樣時才顯示 */
+                    row.entry_name && sameName(row.entry_name, player.nickname || player.player_name) === false
+                      ? h("span", { class: "muted small entry-name", text: "參賽名稱：" + row.entry_name }) : null,
                     configText(row.configs) ? h("span", { class: "config-line", text: configText(row.configs) }) : null
                   ])
                 ]));
@@ -3405,6 +3416,40 @@
   }
 
 
+  /* 對戰表拖曳（視窗事件只註冊一次，重畫時換成新的對戰表元素） */
+  var bracketDrag = { el: null, x: 0, y: 0 };
+
+  window.addEventListener("mousemove", function (event) {
+
+    var el = bracketDrag.el;
+
+    if (!el) {
+      return;
+    }
+
+    var dx = event.clientX - bracketDrag.x;
+    var dy = event.clientY - bracketDrag.y;
+
+    bracketDrag.x = event.clientX;
+    bracketDrag.y = event.clientY;
+    el.scrollLeft -= dx;
+
+    /* 全螢幕時對戰表自己捲動；平常上下就捲整個頁面 */
+    if (el.scrollHeight > el.clientHeight + 1) {
+      el.scrollTop -= dy;
+    } else {
+      window.scrollBy(0, -dy);
+    }
+  });
+
+  window.addEventListener("mouseup", function () {
+    if (bracketDrag.el) {
+      bracketDrag.el.classList.remove("is-dragging");
+      bracketDrag.el = null;
+    }
+  });
+
+
   function drawBracketView(data, reload) {
 
     var oldScroll = app.querySelector(".bracket-scroll");
@@ -3684,6 +3729,20 @@
     });
 
     var scroll = h("div", { class: "bracket-scroll" }, [canvas]);
+
+    /* 電腦：滑鼠在對戰表上會變成小手，按住拖曳就能移動查看 */
+    scroll.addEventListener("mousedown", function (event) {
+
+      if (event.button !== 0 || event.target.closest("button, a, input")) {
+        return;
+      }
+
+      bracketDrag.el = scroll;
+      bracketDrag.x = event.clientX;
+      bracketDrag.y = event.clientY;
+      scroll.classList.add("is-dragging");
+      event.preventDefault();
+    });
 
     var fullBtn = h("button", {
       class: "pill pill-ghost bracket-full-btn",

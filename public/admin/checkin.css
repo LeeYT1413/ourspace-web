@@ -1771,3 +1771,32 @@
   border-style: dashed;
   opacity: 0.7;
 }
+
+.ck-player-batch-area .field-help {
+  margin: 4px 0 0;
+}
+
+/* 已封存：舊資料工具 */
+.ck-legacy {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border: 1px dashed var(--line-bright);
+  border-radius: 14px;
+}
+
+.ck-legacy summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.ck-legacy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.ck-legacy .btn-gold {
+  width: 100%;
+}

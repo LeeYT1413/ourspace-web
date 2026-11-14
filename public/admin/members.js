@@ -328,11 +328,26 @@
       renderMembers();
     }));
 
+    /* 排序 */
+    var sortSelect = el("select", "mm-input mm-sort");
+    [["new", "排序：最新加入"], ["old", "排序：最早加入"], ["name", "排序：暱稱"], ["games", "排序：參賽次數"]].forEach(function (o) {
+      var option = el("option", null, o[1]);
+      option.value = o[0];
+      option.selected = (mm.sort || "new") === o[0];
+      sortSelect.appendChild(option);
+    });
+    sortSelect.setAttribute("aria-label", "排序");
+    sortSelect.addEventListener("change", function () {
+      mm.sort = sortSelect.value;
+      load();
+    });
+    main.appendChild(sortSelect);
+
     main.appendChild(listBox);
 
     function load() {
 
-      api("GET", "/list?filter=" + mm.filter + "&q=" + encodeURIComponent(mm.keyword))
+      api("GET", "/list?filter=" + mm.filter + "&sort=" + (mm.sort || "new") + "&q=" + encodeURIComponent(mm.keyword))
         .then(function (response) {
 
           count.textContent = "共 " + response.total + " 位會員";
@@ -501,6 +516,7 @@
       if (response.can_link) {
         body.appendChild(identityEditor(m));
         body.appendChild(recordsEditor(m));
+        body.appendChild(mergeLogEditor(m));
       }
 
       body.appendChild(el("p", "mm-ok", "✓ 已同步到 ERP，店員結帳時可以用暱稱或電話末三碼找到這位會員"));
@@ -722,6 +738,58 @@
   ======================================================= */
 
   /* 參賽紀錄為主；每一場底下可以展開，查看或加入上位紀錄 */
+  /* 整合紀錄：連結或合併錯人時，可以復原 */
+  function mergeLogEditor(m) {
+
+    var box = el("div", "mm-identities");
+    var list = el("div", "mm-results");
+
+    box.appendChild(el("span", "field-label", "選手資料整合紀錄（整合錯人時可以復原）"));
+    box.appendChild(list);
+
+    function draw() {
+      api("GET", "/" + m.id + "/merges").then(function (res) {
+
+        clear(list);
+
+        if (!(res.data || []).length) {
+          list.appendChild(el("p", "mm-sub", "沒有可以復原的整合紀錄（更新之前做的整合無法復原）。"));
+          return;
+        }
+
+        res.data.forEach(function (log) {
+
+          var row = el("div", "mm-team");
+          var text = (log.kind === "merge" ? "合併「" + (log.name || "選手資料") + "」" : "連結「" + (log.name || "選手資料") + "」") +
+            "・" + String(log.created_at).slice(0, 16).replace(/-/g, "/") +
+            (log.kind === "merge" ? "・上位 " + log.placements + " 筆、參賽 " + log.entries + " 筆" : "");
+
+          row.appendChild(el("span", "mm-grow", text));
+
+          if (log.undone_at) {
+            row.appendChild(el("span", "ck-tag ck-tag-brown", "已復原"));
+          } else {
+            row.appendChild(button("復原", "btn btn-ghost btn-small", function () {
+              if (!window.confirm("確定要復原嗎？那筆選手資料和它的參賽、上位紀錄會從這位會員身上移開。")) {
+                return;
+              }
+              api("POST", "/merges/" + log.id + "/undo")
+                .then(function () { toast("已復原。", "success"); openDetail(m.id); })
+                .catch(function (error) { toast(errorText(error), "error"); });
+            }));
+          }
+
+          list.appendChild(row);
+        });
+      }).catch(function () {});
+    }
+
+    draw();
+
+    return box;
+  }
+
+
   function recordsEditor(m) {
 
     var box = el("div", "mm-identities mm-records");

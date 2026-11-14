@@ -361,3 +361,9 @@
   color: #14213A;
   background: #E9B95A;
 }
+
+.mm-sort {
+  width: auto;
+  margin: 0 0 10px auto;
+  display: block;
+}

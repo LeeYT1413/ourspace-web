@@ -84,6 +84,14 @@ export async function handleMemberAdminApi(request, url, env) {
     return sysadminOnly(staff) || integration(url, env);
   }
 
+  if (parts[0] === "merges" && isPositiveInteger(parts[1]) && parts[2] === "undo" && method === "POST") {
+    return sysadminOnly(staff) || undoMerge(env, staff, Number(parts[1]));
+  }
+
+  if (parts[0] === "quick-placements" && method === "POST") {
+    return sysadminOnly(staff) || quickPlacements(request, env, staff);
+  }
+
   if (parts[0] === "duplicates" && method === "GET") {
     return sysadminOnly(staff) || jsonResponse({ success: true, data: await duplicateGroups(env, null) });
   }
@@ -110,6 +118,11 @@ export async function handleMemberAdminApi(request, url, env) {
 
     if (parts[1] === "captain" && method === "POST") {
       return need("members") || setCaptain(request, env, staff, id);
+    }
+
+    /* 系統管理員：整合紀錄（可以復原） */
+    if (parts[1] === "merges" && method === "GET") {
+      return sysadminOnly(staff) || mergeLogs(env, id);
     }
 
     /* 系統管理員：手動補登參賽和上位紀錄、改隊內暱稱 */
@@ -414,7 +427,9 @@ async function listMembers(url, env, staff) {
     " AND c.checked_in = 1 AND e.archived_at IS NOT NULL) + " +
     "(SELECT COUNT(*) FROM manual_games g WHERE g.user_id = u.id) AS games " +
     "FROM users u LEFT JOIN teams t ON t.id = u.primary_team_id " +
-    "WHERE " + where.join(" AND ") + " ORDER BY u.id DESC LIMIT 200"
+    "WHERE " + where.join(" AND ") + " ORDER BY " +
+    ({ name: "u.nickname COLLATE NOCASE ASC, u.id DESC", games: "games DESC, u.id DESC", old: "u.id ASC" }[url.searchParams.get("sort")] || "u.id DESC") +
+    " LIMIT 200"
   );
 
   var result = await (binds.length ? statement.bind.apply(statement, binds) : statement).all();
@@ -806,8 +821,17 @@ async function attachPlayer(env, userId, playerId) {
   if (!target) {
     await env.DB.batch([
       env.DB.prepare("UPDATE players SET user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(userId, source.id),
-      env.DB.prepare("UPDATE player_placements SET user_id = ? WHERE player_id = ?").bind(userId, source.id)
-    ]);
+      env.DB.prepare("UPDATE player_placements SET user_id = ? WHERE player_id = ?").bind(userId, source.id),
+      env.DB.prepare(
+        "INSERT INTO player_merge_log (kind, user_id, source_player_id) VALUES ('link', ?, ?)"
+      ).bind(userId, source.id)
+    ]).catch(function () {
+      /* 還沒執行 0019：不記錄，但連結照常 */
+      return env.DB.batch([
+        env.DB.prepare("UPDATE players SET user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(userId, source.id),
+        env.DB.prepare("UPDATE player_placements SET user_id = ? WHERE player_id = ?").bind(userId, source.id)
+      ]);
+    });
     return source.id;
   }
 
@@ -903,6 +927,9 @@ async function setMain(request, env, staff, userId) {
 
 export async function mergePlayers(env, fromId, intoId, userId) {
 
+  /* 合併前先記下原本的樣子，之後可以復原 */
+  var snapshot = await mergeSnapshot(env, fromId);
+
   await env.DB.batch([
     /* 先記下這筆原本的名稱，當作那幾場的參賽名稱 */
     env.DB.prepare(
@@ -925,7 +952,162 @@ export async function mergePlayers(env, fromId, intoId, userId) {
     env.DB.prepare("DELETE FROM players WHERE id = ?").bind(fromId)
   ]);
 
+  if (snapshot) {
+    await env.DB.prepare(
+      "INSERT INTO player_merge_log (kind, user_id, source_player_id, target_player_id, snapshot) VALUES ('merge', ?, ?, ?, ?)"
+    ).bind(userId || null, fromId, intoId, JSON.stringify(snapshot)).run().catch(function () {});
+  }
+
   await markRankingDirty(env);
+}
+
+
+async function mergeSnapshot(env, fromId) {
+
+  try {
+    var results = await env.DB.batch([
+      env.DB.prepare("SELECT * FROM players WHERE id = ?").bind(fromId),
+      env.DB.prepare("SELECT id, user_id, entry_name FROM player_placements WHERE player_id = ?").bind(fromId),
+      env.DB.prepare("SELECT id, user_id FROM checkin_entries WHERE player_id = ?").bind(fromId),
+      env.DB.prepare("SELECT id FROM league_matches WHERE player_a_id = ?").bind(fromId),
+      env.DB.prepare("SELECT id FROM league_matches WHERE player_b_id = ?").bind(fromId),
+      env.DB.prepare("SELECT id FROM tournament_results WHERE player_id = ?").bind(fromId),
+      env.DB.prepare("SELECT * FROM player_claims WHERE player_id = ?").bind(fromId)
+    ]);
+
+    var player = (results[0].results || [])[0];
+
+    if (!player) {
+      return null;
+    }
+
+    return {
+      player: player,
+      placements: results[1].results || [],
+      entries: results[2].results || [],
+      league_a: (results[3].results || []).map(function (r) { return r.id; }),
+      league_b: (results[4].results || []).map(function (r) { return r.id; }),
+      tournament: (results[5].results || []).map(function (r) { return r.id; }),
+      claims: results[6].results || []
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+
+/* 整合紀錄：這位會員做過的連結、合併（還沒復原的在前） */
+async function mergeLogs(env, userId) {
+
+  var rows = await env.DB.prepare(
+    "SELECT l.id, l.kind, l.source_player_id, l.target_player_id, l.created_at, l.undone_at, l.snapshot, " +
+    "p.player_name AS source_name FROM player_merge_log l LEFT JOIN players p ON p.id = l.source_player_id " +
+    "WHERE l.user_id = ? ORDER BY l.undone_at IS NOT NULL, l.id DESC LIMIT 50"
+  ).bind(userId).all().catch(function () { return { results: [] }; });
+
+  return jsonResponse({
+    success: true,
+    data: (rows.results || []).map(function (row) {
+      var snap = null;
+      try { snap = row.snapshot ? JSON.parse(row.snapshot) : null; } catch (error) { snap = null; }
+      return {
+        id: row.id,
+        kind: row.kind,
+        name: snap && snap.player ? (snap.player.nickname || snap.player.player_name) : row.source_name,
+        placements: snap ? snap.placements.length : null,
+        entries: snap ? snap.entries.length : null,
+        created_at: row.created_at,
+        undone_at: row.undone_at
+      };
+    })
+  });
+}
+
+
+/* 復原一次整合：link → 解除連結；merge → 把被合併的選手資料和它的紀錄搬回去 */
+async function undoMerge(env, staff, logId) {
+
+  var log = await env.DB.prepare("SELECT * FROM player_merge_log WHERE id = ?").bind(logId).first();
+
+  if (!log) {
+    return errorResponse("NOT_FOUND", 404);
+  }
+
+  if (log.undone_at) {
+    return errorResponse("ALREADY_UNDONE", 409);
+  }
+
+  var statements = [];
+
+  if (log.kind === "link") {
+
+    statements.push(
+      env.DB.prepare("UPDATE players SET user_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?").bind(log.source_player_id, log.user_id),
+      env.DB.prepare("UPDATE player_placements SET user_id = NULL WHERE player_id = ? AND user_id = ?").bind(log.source_player_id, log.user_id)
+    );
+
+  } else {
+
+    var snap = null;
+
+    try { snap = JSON.parse(log.snapshot || "null"); } catch (error) { snap = null; }
+
+    if (!snap || !snap.player) {
+      return errorResponse("NO_SNAPSHOT", 409);
+    }
+
+    /* 選手資料用原本的編號放回去；編號已被別人用掉就換新編號 */
+    var player = snap.player;
+    var taken = await env.DB.prepare("SELECT id FROM players WHERE id = ?").bind(player.id).first();
+    var columns = Object.keys(player).filter(function (key) { return /^[a-z_]+$/.test(key) && (key !== "id" || !taken); });
+
+    var insert = env.DB.prepare(
+      "INSERT INTO players (" + columns.join(", ") + ") VALUES (" + columns.map(function () { return "?"; }).join(", ") + ")"
+    );
+
+    var result = await insert.bind.apply(insert, columns.map(function (key) { return player[key]; })).run();
+    var newId = taken ? result.meta.last_row_id : player.id;
+
+    snap.placements.forEach(function (p) {
+      statements.push(env.DB.prepare("UPDATE player_placements SET player_id = ?, user_id = ?, entry_name = ? WHERE id = ?")
+        .bind(newId, p.user_id === undefined ? null : p.user_id, p.entry_name === undefined ? null : p.entry_name, p.id));
+    });
+
+    snap.entries.forEach(function (e) {
+      statements.push(env.DB.prepare("UPDATE checkin_entries SET player_id = ?, user_id = ? WHERE id = ?")
+        .bind(newId, e.user_id === undefined ? null : e.user_id, e.id));
+    });
+
+    (snap.league_a || []).forEach(function (id) {
+      statements.push(env.DB.prepare("UPDATE league_matches SET player_a_id = ? WHERE id = ?").bind(newId, id));
+    });
+
+    (snap.league_b || []).forEach(function (id) {
+      statements.push(env.DB.prepare("UPDATE league_matches SET player_b_id = ? WHERE id = ?").bind(newId, id));
+    });
+
+    (snap.tournament || []).forEach(function (id) {
+      statements.push(env.DB.prepare("UPDATE tournament_results SET player_id = ? WHERE id = ?").bind(newId, id));
+    });
+
+    (snap.claims || []).forEach(function (c) {
+      var keys = Object.keys(c).filter(function (key) { return key !== "id" && /^[a-z_]+$/.test(key); });
+      var claimInsert = env.DB.prepare(
+        "INSERT INTO player_claims (" + keys.join(", ") + ") VALUES (" + keys.map(function () { return "?"; }).join(", ") + ")"
+      );
+      statements.push(claimInsert.bind.apply(claimInsert, keys.map(function (key) { return key === "player_id" ? newId : c[key]; })));
+    });
+  }
+
+  statements.push(env.DB.prepare(
+    "UPDATE player_merge_log SET undone_at = CURRENT_TIMESTAMP, undone_by = ? WHERE id = ?"
+  ).bind(staff.display_name || String(staff.id), logId));
+
+  await env.DB.batch(statements);
+  await markRankingDirty(env);
+  await writeAuditLog(env, staff, "undo_merge", "player_merge_log", logId, { kind: log.kind });
+
+  return jsonResponse({ success: true });
 }
 
 
@@ -1187,4 +1369,118 @@ async function setMemberTeamNickname(request, env, staff, userId, teamId) {
   await writeAuditLog(env, staff, "set_team_nickname", "users", userId, { team_id: teamId, nickname: nickname });
 
   return jsonResponse({ success: true });
+}
+
+
+
+/* =========================================================
+   快速登錄上位（系統管理員）
+   一場比賽一次輸入多筆「名次＋參賽名稱」，儲存時自動處理：
+   1. 參賽名稱（完全一樣）先找會員的主要暱稱，再找選手資料；都沒有就新建一筆選手資料
+   2. 同一個人已經有「同日期、同比賽名稱、同參賽人數」的上位紀錄 → 視為重複，不寫入
+========================================================= */
+function quickInt(value, min, max) {
+  var number = Number(value);
+  return Number.isInteger(number) && number >= min && number <= max ? number : 0;
+}
+
+async function quickPlacements(request, env, staff) {
+
+  var body = (await parseJsonBody(request)) || {};
+  var date = cleanText(body.event_date);
+  var name = cleanText(body.event_name).slice(0, 100);
+  var total = quickInt(body.participant_count, 1, 9999);
+
+  var rows = (Array.isArray(body.rows) ? body.rows : []).slice(0, 64).map(function (row) {
+    return { placement: quickInt(row && row.placement, 1, 999), entry_name: cleanText(row && row.entry_name).slice(0, 50) };
+  }).filter(function (row) { return row.placement && row.entry_name; });
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !name || !total || !rows.length) {
+    return errorResponse("REQUIRED", 400);
+  }
+
+  var report = [];
+
+  for (var r = 0; r < rows.length; r++) {
+
+    var row = rows[r];
+    var playerId = null;
+    var userId = null;
+    var label = "";
+    var note = "";
+
+    /* 1. 會員：主要暱稱完全一樣 */
+    var members = (await env.DB.prepare(
+      "SELECT id, nickname, primary_team_id FROM users WHERE status = 'active' AND nickname = ? ORDER BY id LIMIT 5"
+    ).bind(row.entry_name).all()).results || [];
+
+    if (members.length) {
+
+      var member = members[0];
+      var main = await mainPlayer(env, member.id, 0);
+
+      userId = member.id;
+      label = "會員 W" + member.id;
+      note = members.length > 1 ? "同名會員有 " + members.length + " 位，算在 W" + member.id : "";
+
+      if (main) {
+        playerId = main.id;
+      } else {
+        playerId = (await env.DB.prepare(
+          "INSERT INTO players (user_id, player_name, nickname, team_id) VALUES (?, ?, ?, ?)"
+        ).bind(member.id, member.nickname, member.nickname, member.primary_team_id || null).run()).meta.last_row_id;
+      }
+
+    } else {
+
+      /* 2. 選手資料：名稱或暱稱完全一樣（已連到會員的優先） */
+      var players = (await env.DB.prepare(
+        "SELECT id, user_id FROM players WHERE status = 'active' AND (nickname = ? OR player_name = ?) " +
+        "ORDER BY user_id IS NULL, id LIMIT 5"
+      ).bind(row.entry_name, row.entry_name).all()).results || [];
+
+      if (players.length) {
+        playerId = players[0].id;
+        userId = players[0].user_id || null;
+        label = userId ? "會員 W" + userId : "選手資料 #" + playerId;
+        note = players.length > 1 ? "同名選手資料有 " + players.length + " 筆，算在 #" + playerId : "";
+      }
+    }
+
+    /* 3. 都沒有：新建一筆非會員選手資料 */
+    if (!playerId) {
+      playerId = (await env.DB.prepare(
+        "INSERT INTO players (player_name, nickname) VALUES (?, ?)"
+      ).bind(row.entry_name, row.entry_name).run()).meta.last_row_id;
+      label = "新建選手資料 #" + playerId;
+    }
+
+    /* 重複：同一個人、同日期、同比賽名稱、同參賽人數 */
+    var duplicate = await env.DB.prepare(
+      "SELECT id FROM player_placements WHERE event_date = ? AND event_name = ? AND participant_count = ? AND " +
+      (userId ? "user_id = ?" : "player_id = ?") + " LIMIT 1"
+    ).bind(date, name, total, userId || playerId).first();
+
+    if (duplicate) {
+      report.push({ placement: row.placement, entry_name: row.entry_name, result: "duplicate", target: label, note: note });
+      continue;
+    }
+
+    await env.DB.prepare(
+      "INSERT INTO player_placements (player_id, event_date, event_name, participant_count, placement, entry_name, user_id) " +
+      "VALUES (?, ?, ?, ?, ?, ?, (SELECT user_id FROM players WHERE id = ?))"
+    ).bind(playerId, date, name, total, row.placement, row.entry_name, playerId).run();
+
+    report.push({ placement: row.placement, entry_name: row.entry_name, result: label.indexOf("新建") === 0 ? "new" : "saved", target: label, note: note });
+  }
+
+  var saved = report.filter(function (x) { return x.result !== "duplicate"; }).length;
+
+  if (saved) {
+    await markRankingDirty(env);
+  }
+
+  await writeAuditLog(env, staff, "quick_placements", "player_placements", null, { event_name: name, saved: saved });
+
+  return jsonResponse({ success: true, saved: saved, data: report });
 }

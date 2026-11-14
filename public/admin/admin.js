@@ -160,6 +160,7 @@
       endpoint: "/api/admin/teams",
       refreshLookups: true,
       columns: [
+        { label: "ID", value: function (r) { return String(r.id); } },
         { label: "排序", value: function (r) { return r.sort_order === undefined ? "" : String(r.sort_order); } },
         { label: "隊名", value: function (r) { return r.team_name; } },
         { label: "代碼", value: function (r) { return r.team_code || ""; } },
@@ -188,6 +189,7 @@
         { label: "戰隊", value: function (r) { return r.team_id ? refLabel("teams", r.team_id) : ""; } },
         { label: "參賽", value: function (r) { return r.games || 0; } },
         { label: "上位", value: function (r) { return r.upper_count || 0; } },
+        { label: "最新參賽", value: function (r) { return r.last_played ? String(r.last_played).replace(/-/g, "/") : "—"; } },
         { label: "會員", value: function (r) { return r.member_name || "—"; } },
         { label: "狀態", value: function (r) { return enumLabel("activeStatus", r.status); }, badge: "status" }
       ],
@@ -299,9 +301,7 @@
     { id: "events", label: "場次管理", group: "賽事" },
     { id: "checkin", label: "報到", group: "賽事" },
     { id: "lottery", label: "抽獎", group: "賽事" },
-    { id: "referee", label: "裁判計分", group: "賽事" },
-    { id: "league_matches", label: "戰隊聯賽", group: "賽事" },
-    { id: "tournaments", label: "賽事報名（舊）", group: "賽事" },
+    /* 裁判計分、戰隊聯賽、賽事報名（舊）已整併到場次管理（舊資料可在「已封存」匯出或轉換） */
     { id: "members", label: "會員管理", group: "會員與戰隊" },
     { id: "review", label: "審核中心", group: "會員與戰隊" },
     { id: "players", label: "選手／上位登錄", group: "會員與戰隊" },
@@ -1005,6 +1005,152 @@
      08. 資料表列表
   ======================================================= */
 
+  /* =======================================================
+     快速登錄上位：一場比賽，多筆名次＋參賽名稱
+     先「比對名字」選要算在誰身上，再送出
+  ======================================================= */
+  function openQuickPlacements(done) {
+
+    var overlay = el("div", "qp-overlay");
+    var sheet = el("div", "qp-sheet");
+    var rowsBox = el("div", "qp-rows");
+    var previewBox = el("div", "qp-preview");
+
+    function field(label, node) {
+      var wrap = el("label", "field");
+      wrap.appendChild(el("span", "field-label", label));
+      wrap.appendChild(node);
+      return wrap;
+    }
+
+    function input(type, placeholder) {
+      var node = el("input", "input mm-input");
+      node.type = type;
+      if (placeholder) {
+        node.placeholder = placeholder;
+      }
+      return node;
+    }
+
+    var date = input("date");
+    var name = input("text", "例如：窩室53盃");
+    var total = input("number", "例如：64");
+
+    date.value = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+
+    function addRow(rank) {
+      var row = el("div", "qp-row");
+      var r = input("number", "名次");
+      var n = input("text", "參賽名稱");
+      r.value = rank || "";
+      row.appendChild(r);
+      row.appendChild(n);
+      row.appendChild(button("×", "btn btn-ghost btn-small", function () {
+        row.remove();
+      }));
+      rowsBox.appendChild(row);
+    }
+
+    function readRows() {
+      return Array.prototype.map.call(rowsBox.querySelectorAll(".qp-row"), function (row) {
+        var inputs = row.querySelectorAll("input");
+        return { placement: inputs[0].value, entry_name: inputs[1].value.trim() };
+      }).filter(function (row) { return row.placement && row.entry_name; });
+    }
+
+    [1, 2, 3, 4].forEach(addRow);
+
+    var close = function () { overlay.remove(); };
+
+    var finished = false;
+
+    var saveBtn = button("儲存", "btn btn-primary", function () {
+
+      /* 儲存完成後，同一顆按鈕變成「關閉」 */
+      if (finished) {
+        close();
+        done();
+        return;
+      }
+
+      var rows = readRows();
+
+      if (!rows.length) {
+        toast("請至少填一筆名次和參賽名稱。", "error");
+        return;
+      }
+
+      saveBtn.disabled = true;
+
+      api("POST", "/api/referee/members/quick-placements", {
+        event_date: date.value,
+        event_name: name.value.trim(),
+        participant_count: total.value,
+        rows: rows
+      })
+        .then(function (res) {
+
+          var dup = res.data.filter(function (x) { return x.result === "duplicate"; }).length;
+          var fresh = res.data.filter(function (x) { return x.result === "new"; }).length;
+
+          toast("已寫入 " + res.saved + " 筆" + (fresh ? "（新建選手資料 " + fresh + " 筆）" : "") + (dup ? "，" + dup + " 筆已經有了，略過。" : "。"), "success");
+
+          /* 每一筆的處理結果 */
+          clear(previewBox);
+          previewBox.appendChild(el("span", "field-label", "處理結果"));
+
+          res.data.forEach(function (x) {
+            var line = el("div", "qp-result");
+            var tag = { saved: ["已寫入", "ck-tag-green"], new: ["新建選手資料", "ck-tag-gold"], duplicate: ["重複・略過", "ck-tag-brown"] }[x.result];
+            line.appendChild(el("span", "mm-grow", "第 " + x.placement + " 名・" + x.entry_name + " → " + x.target + (x.note ? "（" + x.note + "）" : "")));
+            line.appendChild(el("span", "ck-tag " + tag[1], tag[0]));
+            previewBox.appendChild(line);
+          });
+
+          finished = true;
+          saveBtn.textContent = "關閉";
+          saveBtn.disabled = false;
+        })
+        .catch(function (error) {
+          saveBtn.disabled = false;
+          toast(error && error.code === "REQUIRED" ? "日期、比賽名稱、人數和至少一筆名次都要填。" : errorText(error), "error");
+        });
+    });
+
+    var head = el("div", "qp-head");
+    head.appendChild(el("h2", null, "快速登錄上位"));
+    head.appendChild(button("×", "btn btn-ghost btn-small", close));
+
+    var meta = el("div", "qp-meta");
+    meta.appendChild(field("日期", date));
+    meta.appendChild(field("比賽名稱", name));
+    meta.appendChild(field("人數", total));
+
+    sheet.appendChild(head);
+    sheet.appendChild(meta);
+    sheet.appendChild(el("span", "field-label", "名次與參賽名稱"));
+    sheet.appendChild(rowsBox);
+    sheet.appendChild(button("＋ 再加一筆", "btn btn-ghost btn-small", function () {
+      addRow(rowsBox.children.length + 1);
+    }));
+    sheet.appendChild(el("p", "field-help", "儲存時會自動比對參賽名稱：先找主要暱稱一樣的會員，再找名稱一樣的選手資料，都沒有就新建一筆；同一個人已經有同日期、同比賽、同人數的紀錄就略過。"));
+    sheet.appendChild(previewBox);
+
+    var actions = el("div", "qp-actions");
+    actions.appendChild(saveBtn);
+    sheet.appendChild(actions);
+
+    overlay.appendChild(sheet);
+    overlay.addEventListener("click", function (event) {
+      if (event.target === overlay) {
+        close();
+      }
+    });
+    document.body.appendChild(overlay);
+    name.focus();
+  }
+
+
   function renderResourceView(resourceId) {
 
     var config = RESOURCES[resourceId];
@@ -1013,7 +1159,18 @@
     clear(main);
 
     var head = el("div", "view-head");
-    head.appendChild(el("h1", null, config.label));
+    var titleRow = el("div", "view-title-row");
+
+    titleRow.appendChild(el("h1", null, config.label));
+
+    /* 選手頁：系統管理員多一個「快速登錄」 */
+    if (resourceId === "players" && state.staff && state.staff.role === "sysadmin") {
+      titleRow.appendChild(button("快速登錄", "btn btn-gold btn-small", function () {
+        openQuickPlacements(function () { renderResourceView(resourceId); });
+      }));
+    }
+
+    head.appendChild(titleRow);
 
     var tools = el("div", "view-tools");
 
@@ -1086,7 +1243,11 @@
   }
 
 
+  var tableSort = {};
+
   function renderTable(container, config, resourceId, rows, keyword) {
+
+    var rowsOriginal = rows;
 
     clear(container);
 
@@ -1107,8 +1268,50 @@
     var thead = el("thead");
     var headRow = el("tr");
 
-    config.columns.forEach(function (column) {
-      headRow.appendChild(el("th", null, column.label));
+    /* 點欄位標題排序：再點一次反過來，第三次恢復原本順序 */
+    var sort = tableSort[resourceId] || null;
+
+    if (sort) {
+      var column0 = config.columns[sort.index];
+      rows = rows.slice().sort(function (a, b) {
+        var x = column0.value(a);
+        var y = column0.value(b);
+        var nx = Number(x);
+        var ny = Number(y);
+        var result = x !== "" && y !== "" && !isNaN(nx) && !isNaN(ny)
+          ? nx - ny
+          : String(x === null || x === undefined ? "" : x).localeCompare(String(y === null || y === undefined ? "" : y), "zh-Hant");
+        return sort.dir * result;
+      });
+    }
+
+    config.columns.forEach(function (column, index) {
+
+      var active = sort && sort.index === index;
+      var th = el("th", "th-sort" + (active ? " active" : ""), column.label + (active ? (sort.dir > 0 ? " ▲" : " ▼") : ""));
+
+      th.tabIndex = 0;
+      th.setAttribute("aria-sort", active ? (sort.dir > 0 ? "ascending" : "descending") : "none");
+
+      function toggle() {
+        if (!active) {
+          tableSort[resourceId] = { index: index, dir: 1 };
+        } else if (sort.dir > 0) {
+          tableSort[resourceId] = { index: index, dir: -1 };
+        } else {
+          tableSort[resourceId] = null;
+        }
+        renderTable(container, config, resourceId, rowsOriginal, keyword);
+      }
+
+      th.addEventListener("click", toggle);
+      th.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") {
+          toggle();
+        }
+      });
+
+      headRow.appendChild(th);
     });
 
     thead.appendChild(headRow);

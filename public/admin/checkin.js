@@ -526,6 +526,55 @@
      場次管理：列表
   ======================================================= */
 
+  /* 舊資料（賽事報名（舊）、戰隊聯賽）：匯出 CSV、轉成已封存場次 */
+  function legacyTools() {
+
+    var box = el("details", "ck-legacy");
+    box.appendChild(el("summary", null, "舊資料（賽事報名（舊）、戰隊聯賽）"));
+
+    var row = el("div", "ck-legacy-actions");
+
+    [["tournaments", "舊賽事"], ["tournament_registrations", "舊賽事報名"], ["tournament_results", "舊賽事名次"], ["league_matches", "戰隊聯賽"]].forEach(function (item) {
+      row.appendChild(button("匯出" + item[1] + " CSV", "btn btn-ghost btn-small", function () {
+        fetch("/api/admin/legacy/export/" + item[0], { credentials: "same-origin", headers: { "X-OurSpace-Admin": "1" } })
+          .then(function (response) {
+            if (!response.ok) {
+              throw new Error("匯出失敗");
+            }
+            return response.blob();
+          })
+          .then(function (blob) {
+            var link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = "ourspace-" + item[0] + ".csv";
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(function () { URL.revokeObjectURL(link.href); }, 2000);
+          })
+          .catch(function () { toast("匯出失敗，請稍後再試。", "error"); });
+      }));
+    });
+
+    box.appendChild(row);
+    box.appendChild(el("p", "field-help", "轉換會把每個舊賽事建成一個「已封存」場次：報名變成報到名單、名次變成賽後紀錄。舊資料沒有參賽人數，所以不寫入上位紀錄、不影響排行榜。已轉換過的不會重複建立。"));
+
+    box.appendChild(button("把舊賽事轉成已封存場次", "btn btn-gold", function () {
+      if (!confirmBox("確定要把舊賽事轉成已封存場次嗎？")) {
+        return;
+      }
+      A.api("POST", "/api/admin/legacy/convert", {})
+        .then(function (res) {
+          toast("已轉換 " + res.converted + " 場（略過已轉換的 " + res.skipped + " 場）。", "success");
+          return loadEvents().then(renderEvents);
+        })
+        .catch(function (error) { toast(errorText(error), "error"); });
+    }));
+
+    return box;
+  }
+
+
   function renderEvents() {
 
     if (ck.view === "edit") {
@@ -571,6 +620,12 @@
 
     if (ck.listGroup === "archived") {
       list.reverse();
+
+      var me = A.staff();
+
+      if (me && me.role === "sysadmin") {
+        main.appendChild(legacyTools());
+      }
     }
 
     if (!list.length) {
@@ -616,6 +671,12 @@
     var statusClass = { upcoming: "ck-tag-green", pending: "ck-tag-gold", archived: "ck-tag-brown" }[event.group];
 
     tags.appendChild(el("span", "ck-tag " + statusClass, statusText));
+
+    /* 待封存、已封存：賽後紀錄的獎品、得獎者、中獎者沒填齊 */
+    if ((event.group === "pending" || event.group === "archived") && Number(event.incomplete) === 1) {
+      tags.appendChild(el("span", "ck-tag ck-tag-warn", "資料未齊"));
+    }
+
     tags.appendChild(el("span", "ck-tag-note", Number(event.is_public) === 1 ? "官網公開" : "不公開"));
 
     card.appendChild(tags);
@@ -1693,7 +1754,12 @@
           return loadEvents().then(renderSettle);
         })
         .catch(function (error) {
-          toast(errorText(error), "error");
+          /* 資料未齊：不能封存，列出缺什麼 */
+          if (error && error.code === "INCOMPLETE") {
+            toast("資料未齊，不能封存：" + ((error.data && error.data.missing) || []).join("、"), "error");
+          } else {
+            toast(errorText(error), "error");
+          }
           archiveBtn.disabled = false;
         });
     });
@@ -1960,9 +2026,25 @@
         results.appendChild(resultCard(entry, assigned));
       });
 
+      /* 儲存鍵放在官網選手列表上方 */
+      if (matched.length) {
+        var saveBtn = button(ck.picked.length ? "儲存（" + ck.picked.length + " 人）" : "儲存", "btn btn-primary btn-block ck-big-btn", saveBatch);
+        saveBtn.disabled = !ck.picked.length;
+        results.appendChild(saveBtn);
+      } else {
+        results.appendChild(el("p", "ck-empty-box", "找不到「" + ck.searched + "」。可以按「＋」直接新增這個名字，或從下方的官網選手加入。"));
+      }
+
       /* 名單裡沒有的話，再從官網選手資料找 */
       var playerBox = el("div", "ck-player-box");
+      var batchArea = el("div", "ck-player-batch-area");
+
       results.appendChild(playerBox);
+      results.appendChild(batchArea);
+
+      if (matched.length) {
+        results.appendChild(el("p", "field-help ck-center", "小Tips：批次報到由下往上勾選"));
+      }
 
       api("GET", "/players?q=" + encodeURIComponent(ck.searched))
         .then(function (response) {
@@ -1988,10 +2070,18 @@
             addPlayers(candidates.filter(function (p) { return picks[p.id]; }));
           });
 
+          /* 還沒勾選：顯示說明文字；有勾選：顯示加入按鈕（都在小Tips 上方） */
+          var batchHint = el("p", "field-help ck-center", "勾選要加入的官網選手");
+
           function drawBatch() {
             var n = Object.keys(picks).length;
-            batchBtn.textContent = n ? "加入選取的官網選手（" + n + " 位）" : "勾選要加入的官網選手";
-            batchBtn.disabled = !n;
+            clear(batchArea);
+            if (n) {
+              batchBtn.textContent = "加入選取的官網選手（" + n + " 位）";
+              batchArea.appendChild(batchBtn);
+            } else {
+              batchArea.appendChild(batchHint);
+            }
           }
 
           candidates.forEach(function (player) {
@@ -2015,23 +2105,11 @@
           });
 
           drawBatch();
-          playerBox.appendChild(batchBtn);
         })
         .catch(function () {
           /* 找不到選手資料不影響報到 */
         });
 
-      if (!matched.length) {
-        results.appendChild(el("p", "ck-empty-box", "找不到「" + ck.searched + "」。可以按「＋」直接新增這個名字，或從下方的官網選手加入。"));
-        return;
-      }
-
-      var saveBtn = button(ck.picked.length ? "儲存（" + ck.picked.length + " 人）" : "儲存", "btn btn-primary btn-block ck-big-btn", saveBatch);
-
-      saveBtn.disabled = !ck.picked.length;
-      results.appendChild(saveBtn);
-      results.appendChild(el("p", "field-help ck-center",
-        "小Tips：批次報到由下往上勾選"));
     }
 
     function resultCard(entry, assigned) {
