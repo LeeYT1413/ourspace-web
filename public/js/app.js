@@ -2260,12 +2260,112 @@
   }
 
 
-  /* 集點：規則確定前先顯示「敬請期待」 */
+  /* 集點：多張集點卡，平常摺疊（名稱、目前點數）；點開看卡面和最新 5 筆紀錄 */
   function mePoints(body) {
-    clear(body);
-    body.appendChild(h("section", { class: "section" }, [
-      h("div", { class: "coming-soon" }, [h("strong", { class: "serif", text: "敬請期待" })])
-    ]));
+
+    memberApi("GET", "/points?_=" + Date.now()).then(function (res) {
+
+      clear(body);
+
+      var cards = res.data || [];
+      var box = h("section", { class: "section" }, [sectionTitle("我的集點卡")]);
+
+      if (!cards.length) {
+        box.appendChild(h("div", { class: "coming-soon" }, [h("strong", { class: "serif", text: "敬請期待" })]));
+        body.appendChild(box);
+        return;
+      }
+
+      cards.forEach(function (card) {
+
+        var item = h("details", { class: "point-card" }, [
+          h("summary", { class: "point-head" }, [
+            h("strong", { class: "grow", text: card.name }),
+            h("span", { class: "point-balance" }, [
+              h("strong", { class: "serif", text: String(card.balance) }),
+              h("span", { class: "small", text: " 點" })
+            ]),
+            h("span", { class: "point-caret", "aria-hidden": "true", text: "▾" })
+          ])
+        ]);
+
+        /* 卡面 */
+        var face = h("div", { class: "point-face" + (card.image_url ? " has-image" : "") });
+
+        if (card.color) {
+          face.style.setProperty("--card-color", card.color);
+        }
+
+        if (card.image_url) {
+          face.style.backgroundImage = "linear-gradient(rgba(20,33,58,0.55), rgba(20,33,58,0.75)), url(\"" + String(card.image_url).replace(/"/g, "") + "\")";
+        }
+
+        /* 說明放在卡片名稱旁的 ⓘ（電腦移上去、手機點一下） */
+        var nameLine = h("div", { class: "point-face-nameline" }, [h("strong", { class: "serif point-face-name", text: card.name })]);
+
+        if (card.description) {
+
+          var tip = h("button", { class: "info-tip point-tip", type: "button", "aria-label": "集點卡說明", "aria-expanded": "false" }, [
+            h("span", { class: "info-icon", "aria-hidden": "true", text: "ⓘ" }),
+            h("span", { class: "info-pop", role: "tooltip" }, [h("span", { text: card.description })])
+          ]);
+
+          tip.addEventListener("click", function (event) {
+            event.stopPropagation();
+            var open = tip.classList.toggle("open");
+            tip.setAttribute("aria-expanded", open ? "true" : "false");
+          });
+
+          nameLine.appendChild(tip);
+        }
+
+        face.appendChild(h("div", { class: "point-face-top" }, [
+          h("span", { class: "point-face-brand", text: "窩室 OURSPACE" }),
+          nameLine
+        ]));
+
+        if (card.stamp_goal) {
+
+          var filled = Math.min(card.balance, card.stamp_goal);
+          var grid = h("div", { class: "point-stamps", "aria-label": "已集 " + filled + " 點，共 " + card.stamp_goal + " 格" });
+
+          for (var k = 0; k < card.stamp_goal; k++) {
+            grid.appendChild(h("span", { class: "point-stamp" + (k < filled ? " on" : ""), "aria-hidden": "true", text: k < filled ? "★" : String(k + 1) }));
+          }
+
+          face.appendChild(grid);
+          face.appendChild(h("span", { class: "point-face-count", text: filled + " / " + card.stamp_goal + (card.balance >= card.stamp_goal ? "・已集滿" : "") }));
+
+        } else {
+          face.appendChild(h("div", { class: "point-face-big" }, [
+            h("strong", { class: "serif", text: String(card.balance) }),
+            h("span", { text: " 點" })
+          ]));
+        }
+
+        item.appendChild(face);
+
+        /* 最新 5 筆紀錄 */
+        var log = h("div", { class: "point-log" }, [h("span", { class: "label", text: "最新紀錄" })]);
+
+        if (!card.recent.length) {
+          log.appendChild(h("p", { class: "muted small", text: "還沒有點數紀錄。" }));
+        }
+
+        card.recent.forEach(function (r) {
+          log.appendChild(h("div", { class: "point-row" }, [
+            h("span", { class: "muted small point-date", text: String(r.created_at || "").slice(0, 10).replace(/-/g, "/") }),
+            h("span", { class: "grow", text: r.reason || (r.delta > 0 ? "獲得點數" : "使用點數") }),
+            h("strong", { class: r.delta > 0 ? "point-plus" : "point-minus", text: (r.delta > 0 ? "+" : "") + r.delta })
+          ]));
+        });
+
+        item.appendChild(log);
+        box.appendChild(item);
+      });
+
+      body.appendChild(box);
+    });
   }
 
 
@@ -2552,6 +2652,29 @@
             text: "設為主要"
           }) : null
         ]));
+
+        /* 戰隊成員與加入日期（正式隊員才看得到；審核、移除只有隊長能做） */
+        if ((team.roster || []).length) {
+
+          var roster = h("details", { class: "team-roster" }, [
+            h("summary", { text: "戰隊成員（" + team.roster.length + " 人）" })
+          ]);
+
+          team.roster.forEach(function (m) {
+            roster.appendChild(h("div", { class: "roster-line" }, [
+              m.avatar_url
+                ? h("img", { class: "roster-avatar", src: m.avatar_url, alt: "", loading: "lazy", onError: function (event) { event.target.replaceWith(h("span", { class: "roster-avatar roster-avatar-empty", text: (m.nickname || "?").slice(0, 1) })); } })
+                : h("span", { class: "roster-avatar roster-avatar-empty", text: (m.nickname || "?").slice(0, 1) }),
+              h("span", { class: "grow" }, [
+                h("strong", { text: m.nickname + (m.is_me ? "（我）" : "") }),
+                m.is_captain ? h("span", { class: "tag tag-red roster-tag", text: "隊長" }) : null
+              ]),
+              h("span", { class: "muted small", text: m.joined_at ? m.joined_at.replace(/-/g, "/") + " 加入" : "" })
+            ]));
+          });
+
+          box.appendChild(roster);
+        }
       });
 
       /* 申請加入 */

@@ -3699,3 +3699,245 @@ button.bm-tag {
     cursor: pointer;
   }
 }
+
+/* 我的窩室：戰隊成員與加入日期 */
+.team-roster {
+  margin: -4px 0 12px;
+  padding: 8px 14px;
+  background: var(--night-2);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.team-roster summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.roster-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.roster-line:first-of-type {
+  margin-top: 8px;
+}
+
+.roster-line .grow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.roster-line strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roster-avatar {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.roster-avatar-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+  background: var(--paper);
+  font-weight: 900;
+}
+
+.roster-tag {
+  flex: 0 0 auto;
+}
+
+/* =========================================================
+   我的窩室：集點卡
+========================================================= */
+.point-card {
+  margin-bottom: 10px;
+  background: var(--night-2);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.point-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.point-head::-webkit-details-marker {
+  display: none;
+}
+
+.point-balance strong {
+  color: var(--gold);
+  font-size: 22px;
+}
+
+.point-caret {
+  color: var(--muted);
+  font-size: 12px;
+  transition: transform 0.2s ease;
+}
+
+.point-card[open] .point-caret {
+  transform: rotate(180deg);
+}
+
+.point-face {
+  --card-color: #C23A2E;
+  position: relative;
+  margin: 0 14px 14px;
+  padding: 18px;
+  color: var(--paper);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(255, 255, 255, 0.18), transparent 45%),
+    linear-gradient(135deg, var(--card-color), #14213A 130%);
+  background-size: cover;
+  background-position: center;
+  border-radius: 16px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+}
+
+.point-face-top {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.point-face-brand {
+  font-size: 11px;
+  letter-spacing: 3px;
+  opacity: 0.8;
+}
+
+.point-face-name {
+  font-size: 22px;
+}
+
+.point-stamps {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  margin: 16px 0 8px;
+}
+
+.point-stamp {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(241, 230, 210, 0.55);
+  border: 2px dashed rgba(241, 230, 210, 0.45);
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.point-stamp.on {
+  color: #14213A;
+  background: var(--gold);
+  border: 2px solid var(--gold);
+  font-size: 18px;
+}
+
+.point-face-count {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.point-face-big {
+  margin: 18px 0 6px;
+  text-align: right;
+}
+
+.point-face-big strong {
+  font-size: 44px;
+}
+
+.point-face-desc {
+  margin: 8px 0 0;
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.point-log {
+  padding: 0 16px 14px;
+}
+
+.point-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.point-date {
+  flex: 0 0 auto;
+}
+
+.point-plus {
+  color: #7FD18B;
+}
+
+.point-minus {
+  color: #F08A80;
+}
+
+/* 集點卡：名稱旁的 ⓘ */
+.point-face-nameline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.point-tip .info-icon {
+  color: rgba(241, 230, 210, 0.85);
+  font-size: 18px;
+}
+
+.point-tip .info-pop {
+  left: 0;
+  transform: none;
+  width: min(260px, 70vw);
+}
+
+.point-tip .info-pop span {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.point-card {
+  overflow: visible;
+}
+
+/* ⓘ 的說明框對齊卡面，不超出畫面 */
+.point-tip {
+  position: static;
+}
+
+.point-tip .info-pop {
+  top: 76px;
+  left: 16px;
+  right: 16px;
+  width: auto;
+}

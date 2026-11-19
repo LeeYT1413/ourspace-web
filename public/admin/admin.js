@@ -306,6 +306,7 @@
     { id: "review", label: "審核中心", group: "會員與戰隊" },
     { id: "players", label: "選手／上位登錄", group: "會員與戰隊" },
     { id: "teams", label: "戰隊", group: "會員與戰隊" },
+    { id: "point_cards", label: "集點卡", group: "會員與戰隊" },
     { id: "news", label: "公告", group: "網站" },
     { id: "news_images", label: "輪播照片", group: "網站" },
     { id: "contact_messages", label: "聯絡訊息", group: "網站" },
@@ -981,6 +982,8 @@
 
     if (tabId === "referee") {
       renderRefereeView();
+    } else if (window.OurSpacePoints && window.OurSpacePoints.tabs.indexOf(tabId) !== -1) {
+      window.OurSpacePoints.render(tabId, byId("adminMain"));
     } else if (window.OurSpaceAds && window.OurSpaceAds.tabs.indexOf(tabId) !== -1) {
       window.OurSpaceAds.render(tabId, byId("adminMain"));
     } else if (window.OurSpaceMembers && window.OurSpaceMembers.tabs.indexOf(tabId) !== -1) {

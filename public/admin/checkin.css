@@ -1800,3 +1800,46 @@
 .ck-legacy .btn-gold {
   width: 100%;
 }
+
+/* 賽後紀錄：依 Round 發點 */
+.ck-award {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--gold);
+  border-radius: 14px;
+}
+
+.ck-award-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.ck-award-row input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--gold);
+}
+
+.ck-award-row input[type="number"] {
+  width: 90px;
+}
+
+.ck-award-row .ck-grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.ck-award-row input[type="number"] {
+  flex: 0 0 96px;
+  width: 96px;
+  min-width: 0;
+}
+
+.ck-award {
+  margin-bottom: 90px;
+}

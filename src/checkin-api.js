@@ -1065,6 +1065,7 @@ async function settleData(env, event) {
     total: ((results[4].results || [])[0] || {}).total || 0,
     prize_options: prizeOptions,
     bracket: await eventBracket(env, event),
+
     judges: judges,
     waived: waived,
     checked: checked,
@@ -1441,10 +1442,12 @@ async function addEntry(request, env, eventId) {
 
   try {
 
+    /* 從「官網選手」加入：那筆選手資料有連到會員的話，報名也記會員編號 */
     var result = await env.DB.prepare(
-      "INSERT INTO checkin_entries (event_id, nickname, player_id) VALUES (?, ?, ?)"
+      "INSERT INTO checkin_entries (event_id, nickname, player_id, user_id) " +
+      "VALUES (?, ?, ?, (SELECT user_id FROM players WHERE id = ?))"
     )
-    .bind(eventId, nickname, playerId)
+    .bind(eventId, nickname, playerId, playerId)
     .run();
 
     return jsonResponse({ success: true, data: await getEntry(env, result.meta.last_row_id) }, 201);
@@ -2208,7 +2211,10 @@ async function linkBracket(request, env, staff, eventId) {
     return m.code.charAt(0) === "R" ? Math.max(max, m.round) : max;
   }, 1);
 
-  /* 報到名單：名字一樣（不分大小寫）就對到那一筆報名 */
+  /* 報到名單：對戰表上的名字常是從報到名單複製的「33- 暱稱」
+     1. 去掉前面的號碼後，名字一樣
+     2. 名字一樣
+     （都忽略空白、全形半形、大小寫） */
   var entries = (await env.DB.prepare(
     "SELECT id, nickname FROM checkin_entries WHERE event_id = ? AND checked_in = 1"
   ).bind(eventId).all()).results || [];
@@ -2216,8 +2222,12 @@ async function linkBracket(request, env, staff, eventId) {
   var byName = {};
 
   entries.forEach(function (e) {
-    byName[String(e.nickname).trim().toLowerCase()] = e.id;
+    byName[normName(e.nickname)] = e.id;
   });
+
+  function matchEntry(name) {
+    return byName[stripNumber(name)] || byName[normName(name)] || null;
+  }
 
   /* 每一輪真的有上場的人（輪空晉級的不算那一輪），以及有沒有贏 */
   var rows = [];
@@ -2244,7 +2254,7 @@ async function linkBracket(request, env, staff, eventId) {
         round: round,
         label: label,
         name: name,
-        entry_id: byName[String(name).trim().toLowerCase()] || null,
+        entry_id: matchEntry(name),
         won: m.winner === side ? 1 : 0
       });
     });
@@ -2264,6 +2274,16 @@ async function linkBracket(request, env, staff, eventId) {
     seen[k] = r;
     return true;
   });
+
+  /* 還沒執行 0018_event_bracket.sql */
+  var ready = await env.DB.prepare("SELECT bracket_code FROM checkin_events LIMIT 1").first()
+    .then(function () { return env.DB.prepare("SELECT 1 FROM checkin_event_rounds LIMIT 1").first(); })
+    .then(function () { return true; })
+    .catch(function () { return false; });
+
+  if (!ready) {
+    return errorResponse("BRACKET_TABLE_MISSING", 500);
+  }
 
   var statements = [
     env.DB.prepare("DELETE FROM checkin_event_rounds WHERE event_id = ?").bind(eventId),
@@ -2307,7 +2327,7 @@ async function linkBracket(request, env, staff, eventId) {
         return { round: r.round, round_label: r.label, entry_name: r.name, entry_id: r.entry_id, won: r.won };
       })),
       standings: standings.map(function (name) {
-        return { name: name, entry_id: name ? byName[String(name).trim().toLowerCase()] || null : null };
+        return { name: name, entry_id: name ? matchEntry(name) : null };
       })
     }
   });
@@ -2330,4 +2350,19 @@ async function unlinkBracket(env, staff, eventId) {
   await writeAuditLog(env, staff, "unlink_bracket", "checkin_events", eventId, null);
 
   return jsonResponse({ success: true });
+}
+
+
+
+/* 名字比對：忽略空白、全形半形、大小寫 */
+export function normName(text) {
+  return String(text || "")
+    .replace(/[\uFF01-\uFF5E]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+    .replace(/\s+/g, "")
+    .toLowerCase();
+}
+
+/* 去掉前面的號碼，例如「33- 暱稱」→「暱稱」 */
+export function stripNumber(text) {
+  return normName(text).replace(/^\d+[-.、:：_]+/, "");
 }

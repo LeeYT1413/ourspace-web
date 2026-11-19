@@ -23,6 +23,7 @@ import { handleMemberAdminApi } from "./member-admin-api.js";
 import { handleAdsApi } from "./ads-api.js";
 import { handleBracketApi } from "./bracket-api.js";
 import { handleTrackApi } from "./track-api.js";
+import { handlePointsApi } from "./points-api.js";
 import { errorResponse } from "./util.js";
 import { withEdgeCache } from "./edge-cache.js";
 
@@ -76,6 +77,8 @@ async function route(request, url, env) {
     response = await handleAdminApi(request, url, env);
   } else if (pathname.indexOf("/api/ads/") === 0 || pathname === "/api/referee/ads" || pathname.indexOf("/api/referee/ads/") === 0) {
     response = await handleAdsApi(request, url, env);
+  } else if (pathname.indexOf("/api/referee/points/") === 0) {
+    response = await handlePointsApi(request, url, env);
   } else if (pathname === "/api/track") {
     response = await handleTrackApi(request, env);
   } else if (pathname === "/api/brackets" || pathname.indexOf("/api/brackets/") === 0) {

@@ -534,6 +534,10 @@ export async function handleMemberApi(request, url, env) {
     return myPlacements(env, member);
   }
 
+  if (parts[0] === "points" && method === "GET") {
+    return myPoints(env, member);
+  }
+
   if (parts[0] === "players" && method === "GET") {
     return searchPlayers(url, env);
   }
@@ -1175,11 +1179,21 @@ async function myTeams(env, member) {
     ).bind(member.id, member.id),
     env.DB.prepare(
       "SELECT team_id, status, created_at FROM team_edit_requests WHERE user_id = ? ORDER BY id DESC LIMIT 10"
+    ).bind(member.id),
+    /* 我是正式隊員的戰隊：所有正式隊員（隊內暱稱、頭貼、加入日期） */
+    env.DB.prepare(
+      "SELECT mt.team_id, u.id AS user_id, COALESCE(NULLIF(mt.nickname, ''), u.nickname) AS nickname, u.avatar_url, " +
+      "COALESCE(mt.approved_at, datetime(mt.created_at, '+8 hours')) AS joined_at " +
+      "FROM member_teams mt INNER JOIN users u ON u.id = mt.user_id " +
+      "WHERE mt.status = 'active' AND u.status = 'active' AND mt.team_id IN " +
+      "(SELECT team_id FROM member_teams WHERE user_id = ? AND status = 'active') " +
+      "ORDER BY joined_at, u.id"
     ).bind(member.id)
   ]);
 
   var people = results[2].results || [];
   var edits = results[3].results || [];
+  var roster = results[4].results || [];
 
   var mine = (results[0].results || []).map(function (team) {
 
@@ -1201,7 +1215,17 @@ async function myTeams(env, member) {
       is_primary: team.id === member.primary_team_id,
       is_captain: captain,
       edit_status: lastEdit ? lastEdit.status : null,
-      members: captain ? people.filter(function (p) { return p.team_id === team.id; }) : []
+      members: captain ? people.filter(function (p) { return p.team_id === team.id; }) : [],
+      roster: team.status === "active" ? roster.filter(function (p) { return p.team_id === team.id; }).map(function (p) {
+        return {
+          user_id: p.user_id,
+          nickname: p.nickname,
+          avatar_url: p.avatar_url,
+          joined_at: p.joined_at ? String(p.joined_at).slice(0, 10) : null,
+          is_captain: p.user_id === team.captain_user_id,
+          is_me: p.user_id === member.id
+        };
+      }) : []
     };
   });
 
@@ -1385,4 +1409,52 @@ async function setTeamNickname(request, env, member, teamId) {
     .run();
 
   return jsonResponse({ success: true });
+}
+
+
+
+/* =========================================================
+   集點卡：每張卡的目前點數，和最新 5 筆增減紀錄
+========================================================= */
+async function myPoints(env, member) {
+
+  try {
+
+    var results = await env.DB.batch([
+      env.DB.prepare(
+        "SELECT c.id, c.name, c.description, c.color, c.stamp_goal, c.image_url, " +
+        "COALESCE((SELECT SUM(l.delta) FROM point_ledger l WHERE l.card_id = c.id AND l.user_id = ?), 0) AS balance " +
+        "FROM point_cards c WHERE c.status = 'active' ORDER BY c.sort_order, c.id"
+      ).bind(member.id),
+      env.DB.prepare(
+        "SELECT card_id, delta, reason, created_at FROM (" +
+        " SELECT l.*, ROW_NUMBER() OVER (PARTITION BY l.card_id ORDER BY l.id DESC) AS n " +
+        " FROM point_ledger l WHERE l.user_id = ?) WHERE n <= 5 ORDER BY card_id, id DESC"
+      ).bind(member.id)
+    ]);
+
+    var recent = results[1].results || [];
+
+    return jsonResponse({
+      success: true,
+      data: (results[0].results || []).map(function (card) {
+        return {
+          id: card.id,
+          name: card.name,
+          description: card.description,
+          color: /^#[0-9a-fA-F]{6}$/.test(card.color || "") ? card.color : null,
+          stamp_goal: Number(card.stamp_goal) > 0 ? Math.min(Number(card.stamp_goal), 50) : null,
+          image_url: card.image_url,
+          balance: Number(card.balance) || 0,
+          recent: recent.filter(function (r) { return r.card_id === card.id; }).map(function (r) {
+            return { delta: r.delta, reason: r.reason, created_at: r.created_at };
+          })
+        };
+      })
+    });
+
+  } catch (error) {
+    /* 還沒執行 0020_points.sql */
+    return jsonResponse({ success: true, not_ready: true, data: [] });
+  }
 }

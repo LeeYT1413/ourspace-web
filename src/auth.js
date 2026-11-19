@@ -51,6 +51,7 @@ export var WEB_PAGE_KEYS = [
   "review",
   "members",
   "ads",
+  "point_cards",
   "event_delete"
 ];
 

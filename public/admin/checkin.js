@@ -1565,7 +1565,7 @@
       }
 
       var head = el("div", "ck-bracket-head");
-      head.appendChild(el("strong", null, "已連結對戰表 " + info.code + "・共 " + info.rounds.filter(function (r) { return r.label !== "名次賽"; }).length + " 個 Round"));
+      head.appendChild(el("strong", null, "已連結對戰表 " + info.code));
 
       if (!locked) {
         head.appendChild(button("取消連結", "ck-link-danger", function () {
@@ -1580,22 +1580,6 @@
 
       bracketBox.appendChild(head);
 
-      info.rounds.forEach(function (r) {
-
-        var details = el("details", "ck-round");
-        var unmatched = r.players.filter(function (p) { return !p.entry_id; }).length;
-
-        details.appendChild(el("summary", null, r.label + "・" + r.players.length + " 人" + (unmatched ? "（" + unmatched + " 人對不到報到名單）" : "")));
-
-        var names = el("div", "ck-round-names");
-
-        r.players.forEach(function (p) {
-          names.appendChild(el("span", "ck-round-name" + (p.won ? " won" : "") + (p.entry_id ? "" : " missing"), p.name + (p.won ? " ✓" : "")));
-        });
-
-        details.appendChild(names);
-        bracketBox.appendChild(details);
-      });
     }
 
     if (!locked) {
@@ -1642,7 +1626,7 @@
             });
 
             if (!list.length) {
-              toast("已讀取對戰表的輪次。這場還沒有名次，打完後再讀取一次就能帶入。", "success");
+              toast("這張對戰表還沒有名次，打完後再讀取一次就能帶入。", "success");
               return;
             }
 
@@ -1655,11 +1639,17 @@
             drawPlacements();
 
             toast(missing.length
-              ? "已帶入 " + list.length + " 個名次。找不到報到名單裡的：" + missing.join("、") + "（請手動選）"
-              : "已帶入 " + list.length + " 個名次，也讀取了每一輪的參賽者。", missing.length ? "error" : "success");
+              ? "已帶入 " + list.length + " 個名次。有 " + missing.length + " 位對不到報到名單（" + missing.slice(0, 3).join("、") + (missing.length > 3 ? "…" : "") + "），請手動選。"
+              : "已帶入 " + list.length + " 個名次。", missing.length ? "error" : "success");
           })
           .catch(function (error) {
-            var map = { BRACKET_NOT_FOUND: "找不到這個賽事 ID。", BRACKET_NOT_READY: "比賽賽程資料庫還沒設定。" };
+            var map = {
+              BRACKET_NOT_FOUND: "找不到這個賽事 ID，請確認是從對戰表的「複製賽事 ID」複製的。",
+              BRACKET_NOT_READY: "比賽賽程資料庫還沒設定。",
+              BRACKET_TABLE_MISSING: "官網資料庫還沒執行 0018_event_bracket.sql，請先執行再讀取。",
+              INVALID_BRACKET: "賽事 ID 格式不對。",
+              ARCHIVED: "這個場次已封存，要先解除封存。"
+            };
             toast(map[error && error.code] || errorText(error), "error");
           });
       }));
