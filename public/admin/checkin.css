@@ -1843,3 +1843,72 @@
 .ck-award {
   margin-bottom: 90px;
 }
+
+/* 賽後紀錄：名次的「待確認」勾選 */
+.ck-pending-check {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  min-height: 40px;
+  padding: 0 10px;
+  font-size: 13px;
+  white-space: nowrap;
+  border: 1px dashed currentColor;
+  border-radius: 10px;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+.ck-pending-check.on {
+  color: #14213A;
+  background: #E9B95A;
+  border-color: #E9B95A;
+  opacity: 1;
+}
+
+.ck-pending-check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #14213A;
+}
+
+/* 已封存：上位紀錄缺漏 */
+.ck-tag-missing {
+  color: #fff;
+  background: #A8432F;
+}
+
+.ck-pick-row {
+  margin-top: 8px;
+}
+
+.ck-subcard .ck-inline > input:not([type="checkbox"]) {
+  box-sizing: border-box;
+}
+
+/* 賽後紀錄：每個名次最後一行（移除、新增配置） */
+.ck-place-tools {
+  margin-top: 8px;
+}
+
+.ck-place-tools .ck-add-config {
+  margin: 0;
+}
+
+.ck-place-remove {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 14px;
+
+  color: #E08A7E;
+  background: transparent;
+  border: 1px solid rgba(224, 138, 126, 0.5);
+  border-radius: 999px;
+  cursor: pointer;
+
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+}

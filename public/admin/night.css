@@ -618,3 +618,26 @@ input[type="datetime-local"] {
   gap: 8px;
   font-size: 14px;
 }
+
+/* 選手頁：戰隊資料檢查 */
+.tc-item {
+  align-items: flex-start;
+}
+
+.tc-item .mm-grow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tc-line {
+  opacity: 0.75;
+  line-height: 1.5;
+}
+
+.tc-issue {
+  color: #E9B95A;
+  font-size: 14px;
+  line-height: 1.5;
+}

@@ -677,11 +677,17 @@
       tags.appendChild(el("span", "ck-tag ck-tag-warn", "資料未齊"));
     }
 
+    /* 已封存：有名次沒填選手、勾了「待確認」 */
+    if (event.group === "archived" && Number(event.missing_placement) === 1) {
+      tags.appendChild(el("span", "ck-tag ck-tag-missing", "上位紀錄缺漏"));
+    }
+
     tags.appendChild(el("span", "ck-tag-note", Number(event.is_public) === 1 ? "官網公開" : "不公開"));
 
     card.appendChild(tags);
     card.appendChild(el("strong", "ck-card-title", event.title));
-    card.appendChild(el("span", "ck-card-sub", dateLabel(event.event_date, event.start_time) + (event.event_date === ck.today ? "・今天" : "")));
+    card.appendChild(el("span", "ck-card-sub", dateLabel(event.event_date, event.start_time) + (event.event_date === ck.today ? "・今天" : "") +
+      (event.group === "archived" && event.prize_count != null ? "・獎品 " + event.prize_count + " 份" : "")));
 
     var stats = el("div", "ck-stats ck-stats-small");
 
@@ -1246,7 +1252,7 @@
 
     var form = {
       fees: data.fees.map(function (f) { return { label: f.label, price: f.price, count: f.count }; }),
-      placements: data.placements.map(function (p) { return { rank_label: p.rank_label, entry_id: p.entry_id, prize: p.prize || "", configs: (p.configs || []).slice() }; }),
+      placements: data.placements.map(function (p) { return { rank_label: p.rank_label, entry_id: p.entry_id, prize: p.prize || "", configs: (p.configs || []).slice(), unconfirmed: Number(p.unconfirmed) === 1 }; }),
       wins: data.wins.map(function (w) { return { id: w.id, prize: w.prize || "", name: (w.checkin_number ? w.checkin_number + "- " : "") + w.nickname }; })
     };
 
@@ -1427,7 +1433,7 @@
         var label = input("text", item.rank_label, { maxlength: "20", "aria-label": "名次" });
         var select = el("select", "ck-select ck-grow");
 
-        label.className = "ck-w-rank";
+        label.className = "";
         label.disabled = locked;
         select.disabled = locked;
         select.setAttribute("aria-label", item.rank_label + "選手");
@@ -1443,73 +1449,120 @@
           select.appendChild(option);
         });
 
+        /* 待確認：還不確定是誰，勾了就算沒選選手也能儲存、封存（封存後顯示「上位紀錄缺漏」） */
+        var pendingBox = input("checkbox", null, { "aria-label": item.rank_label + "待確認" });
+        var pendingWrap = el("label", "ck-pending-check" + (item.unconfirmed ? " on" : ""));
+
+        pendingBox.className = "";
+        pendingBox.checked = !!item.unconfirmed;
+        pendingBox.disabled = locked;
+        pendingWrap.appendChild(pendingBox);
+        pendingWrap.appendChild(el("span", null, "待確認"));
+        pendingBox.addEventListener("change", function () {
+          item.unconfirmed = pendingBox.checked;
+          pendingWrap.classList.toggle("on", pendingBox.checked);
+        });
+
         label.addEventListener("input", function () { item.rank_label = label.value; });
         select.addEventListener("change", function () { item.entry_id = Number(select.value) || null; });
 
+        /* 第一行：名次、獎品；第二行：待確認、選手；最後一行：移除、新增配置 */
+        var pick = el("div", "ck-inline ck-pick-row");
+
+        label.className = "ck-w-rank";
         top.appendChild(label);
-        top.appendChild(select);
+        pick.appendChild(pendingWrap);
+        pick.appendChild(select);
 
-        if (!locked) {
-          top.appendChild(removeButton("移除這個名次", function () {
-            form.placements.splice(index, 1);
-            drawPlacements();
-          }));
-        }
-
-        /* 獎品：依場次設定的順序；被挑完的就不出現 */
-        var prize = el("select", "ck-select");
+        /* 獎品：依場次設定的順序；被挑完的就不出現；也可以自己輸入（賽後才加的獎品） */
         var optionsList = data.prize_options || [];
+        var prize;
 
-        var none = el("option", null, optionsList.length ? "選擇他挑的獎品" : "（這個場次沒有設定獎品）");
-        none.value = "";
-        prize.appendChild(none);
+        if (item.customPrize || (!optionsList.length && !locked)) {
 
-        var listed = false;
+          prize = input("text", item.prize, { maxlength: "100", placeholder: "輸入獎品，例如：扭蛋 × 2", "aria-label": item.rank_label + "的獎品" });
+          prize.className = "ck-grow";
+          prize.disabled = locked;
+          prize.addEventListener("input", function () { item.prize = prize.value.trim(); });
 
-        /* 每個獎品給一位上位者；被別人選走的就不出現 */
-        var seenLabels = {};
+          /* 清空後離開：回到場次獎品的選單 */
+          prize.addEventListener("blur", function () {
+            if (!prize.value.trim() && optionsList.length) {
+              item.customPrize = false;
+              item.prize = "";
+              drawPlacements();
+            }
+          });
 
-        optionsList.forEach(function (opt) {
+        } else {
 
-          var label = opt.label || opt.name;
+          prize = el("select", "ck-select ck-grow");
 
-          if (seenLabels[label]) {
-            return;
+          var none = el("option", null, optionsList.length ? "選擇他挑的獎品" : "（沒有設定獎品）");
+          none.value = "";
+          prize.appendChild(none);
+
+          var listed = false;
+          var seenLabels = {};
+
+          optionsList.forEach(function (opt) {
+
+            var optLabel = opt.label || opt.name;
+
+            if (seenLabels[optLabel]) {
+              return;
+            }
+
+            seenLabels[optLabel] = true;
+
+            var total = optionsList.filter(function (o) { return (o.label || o.name) === optLabel; }).length;
+            var used = form.placements.filter(function (other) { return other !== item && other.prize === optLabel; }).length;
+
+            if (used >= total && item.prize !== optLabel) {
+              return;
+            }
+
+            var option = el("option", null, optLabel);
+            option.value = optLabel;
+            option.selected = optLabel === item.prize;
+            listed = listed || option.selected;
+            prize.appendChild(option);
+          });
+
+          /* 舊資料或手動寫的獎品，保留顯示 */
+          if (item.prize && !listed) {
+            var keep = el("option", null, item.prize);
+            keep.value = item.prize;
+            keep.selected = true;
+            prize.appendChild(keep);
           }
 
-          seenLabels[label] = true;
-
-          var total = optionsList.filter(function (o) { return (o.label || o.name) === label; }).length;
-          var used = form.placements.filter(function (other) { return other !== item && other.prize === label; }).length;
-
-          if (used >= total && item.prize !== label) {
-            return;
+          if (!locked) {
+            var custom = el("option", null, "＋ 自己輸入獎品");
+            custom.value = "__custom";
+            prize.appendChild(custom);
           }
 
-          var option = el("option", null, label);
-          option.value = label;
-          option.selected = label === item.prize;
-          listed = listed || option.selected;
-          prize.appendChild(option);
-        });
-
-        /* 舊資料或手動寫的獎品，保留顯示 */
-        if (item.prize && !listed) {
-          var keep = el("option", null, item.prize);
-          keep.value = item.prize;
-          keep.selected = true;
-          prize.appendChild(keep);
+          prize.disabled = locked;
+          prize.addEventListener("change", function () {
+            if (prize.value === "__custom") {
+              item.customPrize = true;
+              item.prize = "";
+              drawPlacements();
+              var box = placeList.children[index] && placeList.children[index].querySelector("input[aria-label$='的獎品']");
+              if (box) { box.focus(); }
+              return;
+            }
+            item.prize = prize.value;
+            drawPlacements();
+          });
         }
 
-        prize.disabled = locked;
-        prize.setAttribute("aria-label", item.rank_label + "選的獎品");
-        prize.addEventListener("change", function () {
-          item.prize = prize.value;
-          drawPlacements();
-        });
+        prize.setAttribute("aria-label", item.rank_label + "的獎品");
+        top.appendChild(prize);
 
         card.appendChild(top);
-        card.appendChild(prize);
+        card.appendChild(pick);
 
         /* 配置：可以加好幾個，會跟著存進上位紀錄 */
         item.configs = item.configs || [];
@@ -1537,21 +1590,32 @@
           configBox.appendChild(line);
         });
 
+        if (item.configs.length) {
+          card.appendChild(configBox);
+        }
+
         if (!locked) {
-          configBox.appendChild(button("＋ 新增配置", "ck-add-row ck-add-config", function () {
+          var tools = el("div", "ck-inline ck-place-tools");
+
+          tools.appendChild(button("移除這個名次", "ck-place-remove", function () {
+            form.placements.splice(index, 1);
+            drawPlacements();
+          }));
+
+          tools.appendChild(button("＋ 新增配置", "ck-add-row ck-add-config ck-grow", function () {
             item.configs.push("");
             drawPlacements();
           }));
-        }
 
-        card.appendChild(configBox);
+          card.appendChild(tools);
+        }
         placeList.appendChild(card);
       });
     }
 
     drawPlacements();
 
-    placeBlock.appendChild(sectionTitle("上位者與比賽獎品", "名次和獎品會照場次的獎品順序自動帶入，可以修改；每個獎品給一位上位者，選走的不會再出現。封存時，上位者會寫進上位紀錄。"));
+    placeBlock.appendChild(sectionTitle("上位者與比賽獎品", "名次和獎品會照場次的獎品順序自動帶入，可以修改；每個獎品給一位上位者，選走的不會再出現。賽後才加的獎品按「＋ 新增獎品」自己輸入。還不確定是誰拿到的，勾「待確認」就能先封存。封存時，上位者會寫進上位紀錄。"));
 
     /* 連結「比賽賽程」：貼上對戰表上複製的賽事 ID，讀取名次、有幾輪、每一輪的參賽者 */
     var bracketBox = el("div", "ck-bracket");
@@ -1621,7 +1685,8 @@
                 rank_label: "第" + (list.length + 1) + "名",
                 entry_id: row.entry_id,
                 prize: options[list.length] || "",
-                configs: []
+                configs: [],
+                unconfirmed: false
               });
             });
 
@@ -1679,8 +1744,17 @@
           return false;
         });
 
-        form.placements.push({ rank_label: "第" + (form.placements.length + 1) + "名", entry_id: null, prize: nextPrize, configs: [] });
+        form.placements.push({ rank_label: "第" + (form.placements.length + 1) + "名", entry_id: null, prize: nextPrize, configs: [], unconfirmed: false });
         drawPlacements();
+      }));
+
+      /* 賽後才加的獎品：自己輸入獎品，一樣要填名次、選手（或勾待確認）、配置 */
+      placeBlock.appendChild(button("＋ 新增獎品", "ck-add-row", function () {
+        form.placements.push({ rank_label: "第" + (form.placements.length + 1) + "名", entry_id: null, prize: "", configs: [], unconfirmed: false, customPrize: true });
+        drawPlacements();
+        var cards = placeList.querySelectorAll(".ck-subcard");
+        var box = cards.length && cards[cards.length - 1].querySelector("input[aria-label$='的獎品']");
+        if (box) { box.focus(); }
       }));
     }
 
@@ -2115,7 +2189,7 @@
       headBtn.appendChild(el("span", "ck-name", (entry.checkin_number ? entry.checkin_number + "- " : "") + entry.nickname));
 
       if (entry.user_id) {
-        headBtn.appendChild(el("span", "ck-tag ck-tag-gold", "會員"));
+        headBtn.appendChild(el("span", "ck-tag ck-tag-gold", "會員 W" + entry.user_id));
       }
 
       if (entry.source === "online") {
@@ -2283,14 +2357,15 @@
 
     var tools = el("div", "ck-actions");
 
-    tools.appendChild(button("📋 複製名單（打散）", "btn btn-primary", copyList));
+    tools.appendChild(button("📋 複製到群組", "btn btn-primary", function () { copyList(false); }));
+    tools.appendChild(button("🏆 複製到對戰表", "btn btn-primary", function () { copyList(true); }));
 
     if (!locked) {
       tools.appendChild(button("📥 匯入名單", "btn btn-ghost", openImport));
     }
 
     area.appendChild(tools);
-    area.appendChild(el("p", "field-help", "複製時會把同戰隊（名稱前三個字相同）的人錯開，方便貼到群組排對戰。"));
+    area.appendChild(el("p", "field-help", "兩個按鈕都會把同戰隊（名稱前三個字相同）的人錯開。「複製到群組」只有號碼和名字；「複製到對戰表」會在名字後面加會員編號「#W」和場次編號「#E」，貼到比賽賽程時會自動拿掉、對戰表上不顯示；賽程會自動連到這一場（賽後紀錄直接帶出賽事 ID），發點和帶入名次也能直接對到會員。"));
 
     if (!ck.entries.length) {
       area.appendChild(el("p", "empty", "這個場次還沒有人報名。"));
@@ -2335,7 +2410,7 @@
 
 
   /* 依名稱前三個字分組（通常是戰隊名），盡量讓同組不相鄰 */
-  function buildCopyText() {
+  function buildCopyText(withMemberIds) {
 
     var checked = ck.entries.filter(function (e) { return Number(e.checked_in) === 1; });
     var groups = {};
@@ -2385,14 +2460,18 @@
     }
 
     return result.map(function (entry) {
-      return (entry.checkin_number ? entry.checkin_number + "- " : "") + entry.nickname + (Number(entry.is_judge) === 1 ? " ㊣" : "");
+      /* 會員加上「 #W編號」：貼到對戰表時會自動拿掉、另外記住是哪位會員 */
+      return (entry.checkin_number ? entry.checkin_number + "- " : "") + entry.nickname + (Number(entry.is_judge) === 1 ? " ㊣" : "") +
+        (withMemberIds && entry.user_id ? " #W" + entry.user_id : "") +
+        (withMemberIds ? " #E" + ck.eventId : "");
     }).join("\n");
   }
 
 
-  function copyList() {
+  function copyList(withMemberIds) {
 
-    var text = buildCopyText();
+    var text = buildCopyText(withMemberIds);
+    var done = withMemberIds ? "已打散並複製名單（含會員編號），貼到比賽賽程的參賽者。" : "已打散並複製名單。";
 
     if (!text) {
       toast("目前沒有已報到的選手。", "error");
@@ -2419,13 +2498,13 @@
 
       document.body.removeChild(node);
 
-      toast(ok ? "已打散並複製名單。" : "複製失敗，請手動複製。", ok ? "success" : "error");
+      toast(ok ? done : "複製失敗，請手動複製。", ok ? "success" : "error");
     }
 
     if (navigator.clipboard && window.isSecureContext) {
       navigator.clipboard.writeText(text)
         .then(function () {
-          toast("已打散並複製名單。", "success");
+          toast(done, "success");
         })
         .catch(fallback);
     } else {

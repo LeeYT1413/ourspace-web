@@ -394,6 +394,8 @@
 
 .pc-face {
   --card-color: #C23A2E;
+  aspect-ratio: 8 / 5; /* 卡面固定 8:5，格子多時才往下長 */
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -477,4 +479,59 @@
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: 12px;
+}
+
+/* 卡面背景圖：60% 不透明度，不蓋深色 */
+.point-face.has-image,
+.pc-face.has-image {
+  position: relative;
+  background: #0B1424;
+  isolation: isolate;
+}
+
+.point-face.has-image::before,
+.pc-face.has-image::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--card-image) center / cover no-repeat;
+  border-radius: inherit;
+  opacity: 0.6;
+}
+
+/* 批次發點：非會員（記在選手資料，等認領） */
+.ck-round-name.guest {
+  color: #14213A;
+  background: #9CC3E8;
+  border-color: #9CC3E8;
+}
+
+/* 手動加扣點：已選的會員（可以移除） */
+.pc-picked {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.pc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 4px;
+}
+
+.pc-chip-x {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: inherit;
+  background: rgba(20, 33, 58, 0.15);
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
 }

@@ -30,7 +30,14 @@
       BRACKET_NOT_READY: "比賽賽程資料庫還沒設定。",
       INVALID_BRACKET: "賽事 ID 格式不對。"
     };
-    return map[error && error.code] || A.errorText(error);
+    var text = map[error && error.code];
+    if (!text) {
+      return A.errorText(error);
+    }
+    if (error && error.data && Array.isArray(error.data.reasons) && error.data.reasons.length) {
+      text += "（" + error.data.reasons.join("、") + "）";
+    }
+    return text;
   }
 
   function input(type, value, attrs) {
@@ -108,7 +115,8 @@
       face.style.setProperty("--card-color", c.color || "#C23A2E");
 
       if (c.image_url) {
-        face.style.backgroundImage = "linear-gradient(rgba(20,33,58,0.5), rgba(20,33,58,0.7)), url(\"" + String(c.image_url).replace(/"/g, "") + "\")";
+        face.style.setProperty("--card-image", "url(\"" + String(c.image_url).replace(/"/g, "") + "\")");
+        face.classList.add("has-image");
       }
 
       face.appendChild(el("strong", null, c.name));
@@ -220,6 +228,7 @@
           var check = el("input");
           var points = input("number", "", { min: "1", max: "10000", placeholder: "點數", "aria-label": r.label + " 發幾點" });
           var members = r.players.filter(function (p) { return p.user_id; }).length;
+          var guestCount = r.players.filter(function (p) { return !p.user_id && (p.entry_id || p.guest_name); }).length;
 
           points.classList.add("mm-input");
 
@@ -233,14 +242,14 @@
           });
 
           top.appendChild(check);
-          top.appendChild(el("span", "ck-grow", r.label + "・" + r.players.length + " 人（會員 " + members + " 人）"));
+          top.appendChild(el("span", "ck-grow", r.label + "・" + r.players.length + " 人（會員 " + members + " 人" + (guestCount ? "、非會員 " + guestCount + " 人" : "") + "）"));
           top.appendChild(points);
           wrap.appendChild(top);
 
           var names = el("div", "ck-round-names");
 
           r.players.forEach(function (p) {
-            names.appendChild(el("span", "ck-round-name" + (p.user_id ? " won" : " missing"),
+            names.appendChild(el("span", "ck-round-name" + (p.user_id ? " won" : (p.entry_id || p.guest_name) ? " guest" : " missing"),
               p.name + (p.user_id && p.member_name && p.member_name !== p.name ? " → " + p.member_name : "") + (p.note ? "（" + p.note + "）" : "")));
           });
 
@@ -249,7 +258,7 @@
           rows.push({ round: r.round, check: check, points: points });
         });
 
-        roundsBox.appendChild(el("p", "field-help", "只發給對到的會員（金色）；同一位會員在同一張對戰表、同一個 Round、同一張卡只會發一次。"));
+        roundsBox.appendChild(el("p", "field-help", "金色是會員，點數直接記在會員身上；藍色是非會員，點數記在他的選手資料（沒有就另外建立一筆，不用同名的舊資料），之後會員認領就會算到他身上，一年沒認領會自動清除；不在報到名單的（直接在對戰表新增的），有選場次時會加進報到名單、標已報到。虛線是同名會員不只一位、沒辦法判斷的，不會發。同一人在同一張對戰表、同一個 Round、同一張卡只會發一次。"));
 
         roundsBox.appendChild(button("發點", "btn btn-primary btn-block", function () {
 
@@ -270,8 +279,9 @@
           api("POST", "/award", { code: loadedCode, card_id: card.value, event_id: eventId || null, rounds: picked })
             .then(function (res) {
               toast("已發點給 " + res.given + " 人次" +
+                (res.guests ? "（其中非會員 " + res.guests + " 人次，等認領）" : "") +
                 (res.skipped ? "，" + res.skipped + " 人次之前發過了" : "") +
-                (res.unmatched ? "，" + res.unmatched + " 人次對不到會員，沒有發" : "") + "。", "success");
+                (res.unmatched ? "，" + res.unmatched + " 人次同名會員不只一位，沒有發" : "") + "。", "success");
               return load().then(render);
             })
             .catch(function (error) { toast(errorText(error), "error"); });
@@ -306,7 +316,8 @@
     var box = el("div", "ck-block");
     box.appendChild(el("h2", "ck-block-title", "手動加扣點"));
 
-    var card = cardSelect("", "選擇集點卡");
+    var card = cardSelect(pt.adjustCard || "", "選擇集點卡");
+    card.addEventListener("change", function () { pt.adjustCard = card.value; });
     var search = input("search", "", { placeholder: "搜尋會員：暱稱、電話或會員編號", "aria-label": "搜尋會員" });
     var results = el("div", "pc-results");
     var pickedBox = el("div", "pc-picked");
@@ -314,10 +325,23 @@
     var reason = input("text", "", { maxlength: "100", placeholder: "原因（例如：兌換飲料）", "aria-label": "原因" });
     var timer = null;
 
+    /* 可以選多位會員；選錯按 × 移除 */
+    pt.pickedList = pt.pickedList || [];
+
     function drawPicked() {
       clear(pickedBox);
-      if (pt.picked) {
-        pickedBox.appendChild(el("span", "ck-tag ck-tag-gold", "已選：" + pt.picked.nickname + "（W" + pt.picked.id + "）"));
+      pt.pickedList.forEach(function (m, index) {
+        var chip = el("span", "ck-tag ck-tag-gold pc-chip");
+        chip.appendChild(el("span", null, m.nickname + "（W" + m.id + "）"));
+        chip.appendChild(button("×", "pc-chip-x", function () {
+          pt.pickedList.splice(index, 1);
+          drawPicked();
+        }));
+        chip.lastChild.setAttribute("aria-label", "移除 " + m.nickname);
+        pickedBox.appendChild(chip);
+      });
+      if (pt.pickedList.length > 1) {
+        pickedBox.appendChild(el("span", "field-help", "共 " + pt.pickedList.length + " 位"));
       }
     }
 
@@ -332,12 +356,18 @@
         api("GET", "/members?q=" + encodeURIComponent(q)).then(function (res) {
           clear(results);
           (res.data || []).forEach(function (m) {
-            results.appendChild(button(m.nickname + "・W" + m.id + (m.team_name ? "・" + m.team_name : ""), "ck-player-add", function () {
-              pt.picked = m;
+            var already = pt.pickedList.some(function (x) { return x.id === m.id; });
+            var pickBtn = button(m.nickname + "・W" + m.id + (m.team_name ? "・" + m.team_name : "") + (already ? "（已選）" : ""), "ck-player-add", function () {
+              if (!already) {
+                pt.pickedList.push(m);
+              }
               clear(results);
               search.value = "";
               drawPicked();
-            }));
+              search.focus();
+            });
+            pickBtn.disabled = already;
+            results.appendChild(pickBtn);
           });
           if (!results.children.length) {
             results.appendChild(el("p", "field-help", "找不到會員。"));
@@ -354,13 +384,20 @@
     box.appendChild(field("原因", reason));
 
     box.appendChild(button("送出", "btn btn-primary btn-block", function () {
-      if (!card.value || !pt.picked || !Number(delta.value)) {
+      if (!card.value || !pt.pickedList.length || !Number(delta.value)) {
         toast("請選集點卡、會員，並填點數。", "error");
         return;
       }
-      api("POST", "/adjust", { card_id: card.value, user_id: pt.picked.id, delta: Number(delta.value), reason: reason.value.trim() })
-        .then(function () {
-          toast("已登錄。", "success");
+      api("POST", "/adjust", {
+        card_id: card.value,
+        user_ids: pt.pickedList.map(function (m) { return m.id; }),
+        delta: Number(delta.value),
+        reason: reason.value.trim()
+      })
+        .then(function (res) {
+          toast("已登錄 " + ((res && res.count) || pt.pickedList.length) + " 位會員。", "success");
+          /* 送出後清空會員、點數、原因（集點卡保留） */
+          pt.pickedList = [];
           delta.value = "";
           reason.value = "";
           return load().then(render);
@@ -399,7 +436,7 @@
         res.data.forEach(function (r) {
           var row = el("div", "pc-row");
           var info = el("div", "pc-grow");
-          info.appendChild(el("strong", null, (r.nickname || "W" + r.user_id) + "・" + (r.card_name || "")));
+          info.appendChild(el("strong", null, (r.nickname || "W" + r.user_id) + (Number(r.unclaimed) === 1 ? "（非會員・待認領）" : "") + "・" + (r.card_name || "")));
           info.appendChild(el("span", "field-help", String(r.created_at || "").slice(0, 16).replace(/-/g, "/") + "・" + (r.reason || "") + "・" + (r.created_by || "") + "・目前 " + r.balance + " 點"));
           row.appendChild(info);
           row.appendChild(el("strong", r.delta > 0 ? "pc-plus" : "pc-minus", (r.delta > 0 ? "+" : "") + r.delta));
@@ -466,7 +503,7 @@
     form.appendChild(field("說明", desc, "會員在卡片名稱旁的 ⓘ 看得到，例如：集滿 10 點換限定貼紙。"));
     form.appendChild(field("卡面顏色", color));
     form.appendChild(field("集滿幾點", goal, "有填會在卡面顯示格子（最多 50 格）。"));
-    form.appendChild(field("卡面背景圖網址", image));
+    form.appendChild(field("卡面背景圖網址", image, "建議 1600 × 1000 像素（8:5 橫式）JPG，500KB 以內。圖片會用 60% 不透明度顯示（不另外蓋深色）；左上放卡名、左側放格子，重點圖案放右側或四周邊框。"));
     form.appendChild(field("顯示順序", sort, "數字小的排前面。"));
     form.appendChild(field("狀態", status));
 

@@ -600,6 +600,7 @@ async function getDraft(env, member, id) {
       format: bracket.format,
       status: bracket.status,
       participants: parseNames(bracket.participants),
+      participant_members: await bracketMemberMap(env, bracket.id),
       helpers: helpers
     }
   });
@@ -613,14 +614,29 @@ function cleanDraft(body) {
   var format = FORMATS.indexOf(body.format) !== -1 ? body.format : "champ";
   var names = [];
   var seen = {};
+  var members = {};
+  var eventVotes = {};
+  var given = body.participant_members && typeof body.participant_members === "object" ? body.participant_members : {};
 
   (Array.isArray(body.participants) ? body.participants : []).forEach(function (raw) {
 
-    var name = cleanText(raw).slice(0, 40);
+    /* 報到名單複製來的「 #W12 #E5」：會員編號、場次編號，從名字拿掉，另外記 */
+    var tags = readTags(cleanText(raw));
+    var name = tags.name.slice(0, 40);
+
+    if (tags.event) {
+      eventVotes[tags.event] = (eventVotes[tags.event] || 0) + 1;
+    }
 
     if (name && !/[<>]/.test(name) && !seen[name.toLowerCase()] && names.length < MAX_PARTICIPANTS) {
       seen[name.toLowerCase()] = true;
       names.push(name);
+
+      var memberId = tags.member || Number(given[name]);
+
+      if (isPositiveInteger(memberId)) {
+        members[name] = Number(memberId);
+      }
     }
   });
 
@@ -640,8 +656,118 @@ function cleanDraft(body) {
     date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null,
     format: format,
     names: names,
+    members: members,
+    /* 這份名單是從哪一場報到複製來的（取最多人帶的那一場） */
+    event_id: isPositiveInteger(body.event_id) ? Number(body.event_id) : Object.keys(eventVotes).sort(function (a, b) {
+      return eventVotes[b] - eventVotes[a];
+    }).map(Number)[0] || null,
     helpers: helpers
   };
+}
+
+
+/* 名字後面的「 #W12」「 #E5」（可以都有）：拿掉後回傳名字、會員編號、場次編號 */
+export function readTags(text) {
+
+  var value = String(text || "");
+  var member = null;
+  var event = null;
+  var match;
+
+  while ((match = value.match(/\s*#([WE])(\d+)\s*$/i))) {
+    if (match[1].toUpperCase() === "W") {
+      member = member || Number(match[2]);
+    } else {
+      event = event || Number(match[2]);
+    }
+    value = value.slice(0, match.index);
+  }
+
+  return { name: value.trim(), member: member, event: event };
+}
+
+
+/* 貼上的名單帶了場次編號：那一場還沒連對戰表的話，連上這個賽程（賽後紀錄會直接帶出賽事 ID） */
+async function linkEvent(env, eventId, shareCode) {
+
+  if (!eventId || !shareCode) {
+    return;
+  }
+
+  try {
+    await env.DB.prepare(
+      "UPDATE checkin_events SET bracket_code = ? WHERE id = ? AND COALESCE(bracket_code, '') = ''"
+    ).bind(shareCode, eventId).run();
+  } catch (error) {
+    console.error("bracket link event skipped:", error && error.message);
+  }
+}
+
+
+/* =========================================================
+   參賽者對應的會員（存在官網資料庫 bracket_members，對戰表上不顯示）
+   ⚠ 要先執行 0022_bracket_members.sql；還沒執行時略過，不影響賽程
+   ========================================================= */
+
+async function saveBracketMembers(env, bracketId, members) {
+
+  try {
+
+    var names = Object.keys(members || {});
+    var valid = {};
+
+    if (names.length) {
+      var ids = names.map(function (name) { return members[name]; });
+      var found = await env.DB.prepare("SELECT id FROM users WHERE id IN (SELECT value FROM json_each(?))")
+        .bind(JSON.stringify(ids)).all();
+      (found.results || []).forEach(function (row) { valid[row.id] = true; });
+    }
+
+    /* 只換會員的對應；批次發點建立的非會員選手資料保留 */
+    var statements = [env.DB.prepare("DELETE FROM bracket_members WHERE bracket_id = ? AND player_id IS NULL").bind(bracketId)];
+
+    names.forEach(function (name) {
+      if (valid[members[name]]) {
+        statements.push(
+          env.DB.prepare("INSERT OR REPLACE INTO bracket_members (bracket_id, name, user_id, player_id) VALUES (?, ?, ?, NULL)")
+            .bind(bracketId, name, members[name])
+        );
+      }
+    });
+
+    await env.DB.batch(statements);
+
+  } catch (error) {
+    console.error("bracket_members save skipped:", error && error.message);
+  }
+}
+
+
+/* 某個賽程的非會員 → 批次發點時建立的選手資料：{ 名字: 選手資料編號 } */
+export async function bracketGuestMap(env, bracketId) {
+
+  try {
+    var rows = await env.DB.prepare("SELECT name, player_id FROM bracket_members WHERE bracket_id = ? AND user_id IS NULL AND player_id IS NOT NULL").bind(bracketId).all();
+    var map = {};
+    (rows.results || []).forEach(function (row) { map[row.name] = row.player_id; });
+    return map;
+  } catch (error) {
+    return {};
+  }
+}
+
+
+/* 某個賽程的參賽者 → 會員：{ 名字: 會員編號 } */
+export async function bracketMemberMap(env, bracketId) {
+
+  try {
+    var rows = await env.DB.prepare("SELECT name, user_id FROM bracket_members WHERE bracket_id = ? AND user_id IS NOT NULL").bind(bracketId).all();
+    var map = {};
+    (rows.results || []).forEach(function (row) { map[row.name] = row.user_id; });
+    return map;
+  } catch (error) {
+    return {};
+  }
 }
 
 
@@ -694,6 +820,8 @@ async function saveDraft(body, env, member, id) {
       JSON.stringify(draft.names), JSON.stringify(draft.helpers)).run();
 
     await rebuildMatches(env, created.meta.last_row_id, draft.names, draft.format);
+    await saveBracketMembers(env, created.meta.last_row_id, draft.members);
+    await linkEvent(env, draft.event_id, shareCode);
     await touch(env, created.meta.last_row_id);
 
     return jsonResponse({ success: true, id: created.meta.last_row_id, share_code: shareCode }, 201);
@@ -714,6 +842,9 @@ async function saveDraft(body, env, member, id) {
       "UPDATE brackets SET title = ?, event_date = ?, start_time = ?, format = ?, participants = ?, helpers = ?, " +
       "updated_at = CURRENT_TIMESTAMP WHERE id = ?"
     ).bind(draft.title, draft.date, draft.time, draft.format, JSON.stringify(draft.names), JSON.stringify(draft.helpers), id).run();
+
+    await saveBracketMembers(env, id, draft.members);
+    await linkEvent(env, draft.event_id, check.bracket.share_code);
   } else {
     await env.BRACKET_DB.prepare(
       "UPDATE brackets SET title = ?, event_date = ?, start_time = ?, helpers = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
@@ -794,6 +925,8 @@ async function deleteBracket(env, member, id) {
     env.BRACKET_DB.prepare("DELETE FROM bracket_matches WHERE bracket_id = ?").bind(id),
     env.BRACKET_DB.prepare("DELETE FROM brackets WHERE id = ?").bind(id)
   ]);
+
+  await env.DB.prepare("DELETE FROM bracket_members WHERE bracket_id = ?").bind(id).run().catch(function () {});
 
   return jsonResponse({ success: true });
 }

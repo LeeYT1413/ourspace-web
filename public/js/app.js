@@ -2297,7 +2297,8 @@
         }
 
         if (card.image_url) {
-          face.style.backgroundImage = "linear-gradient(rgba(20,33,58,0.55), rgba(20,33,58,0.75)), url(\"" + String(card.image_url).replace(/"/g, "") + "\")";
+          /* 背景圖：不蓋深色，圖片本身用 60% 不透明度顯示（CSS 的 ::before） */
+          face.style.setProperty("--card-image", "url(\"" + String(card.image_url).replace(/"/g, "") + "\")");
         }
 
         /* 說明放在卡片名稱旁的 ⓘ（電腦移上去、手機點一下） */
@@ -3242,7 +3243,9 @@
       id: data.id,
       format: data.format || "champ",
       players: (data.participants || []).slice(),
-      helpers: (data.helpers || []).slice()
+      helpers: (data.helpers || []).slice(),
+      /* 從報到名單貼上的「#W12」：會員編號，不顯示在對戰表上，用來對會員（集點、上位紀錄） */
+      memberIds: Object.assign({}, data.participant_members || {})
     };
 
     clear(app);
@@ -3306,11 +3309,12 @@
         playerList.appendChild(h("div", { class: "player-row" }, [
           h("span", { class: "num", text: String(i + 1) }),
           h("strong", { class: "grow", text: name }),
+          form.memberIds[name] ? h("span", { class: "player-member", title: "已對到會員", text: "會員" }) : null,
           started ? null : h("button", {
             class: "x-btn x-small",
             type: "button",
             "aria-label": "移除 " + name,
-            onClick: function () { form.players.splice(i, 1); drawPlayers(); },
+            onClick: function () { delete form.memberIds[form.players[i]]; form.players.splice(i, 1); drawPlayers(); },
             text: "×"
           })
         ]));
@@ -3324,10 +3328,21 @@
       form.players.forEach(function (n) { seen[n.toLowerCase()] = true; });
 
       addArea.value.split(/\n/).forEach(function (line) {
-        var name = line.trim().slice(0, 40);
+        /* 報到名單複製來的「 #W12 #E5」：會員編號、場次編號，拿掉後另外記，不會出現在名字上 */
+        var raw = line.trim();
+        var memberTag = null;
+        var tag;
+        while ((tag = raw.match(/\s*#([WE])(\d+)\s*$/i))) {
+          if (tag[1].toUpperCase() === "W") { memberTag = memberTag || Number(tag[2]); } else { form.eventId = form.eventId || Number(tag[2]); }
+          raw = raw.slice(0, tag.index);
+        }
+        var name = raw.trim().slice(0, 40);
         if (name && !seen[name.toLowerCase()]) {
           seen[name.toLowerCase()] = true;
           form.players.push(name);
+        }
+        if (name && memberTag) {
+          form.memberIds[name] = memberTag;
         }
       });
 
@@ -3445,6 +3460,11 @@
         start_time: timeInput.value,
         format: form.format,
         participants: form.players,
+        event_id: form.eventId || null,
+        participant_members: form.players.reduce(function (map, name) {
+          if (form.memberIds[name]) { map[name] = form.memberIds[name]; }
+          return map;
+        }, {}),
         helpers: form.helpers.map(function (m) { return m.id; })
       };
     }

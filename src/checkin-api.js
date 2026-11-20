@@ -32,7 +32,7 @@ import {
 import { requireStaff, writeAuditLog, canUsePage, MANAGER_ROLES } from "./auth.js";
 import { getMember, registerPeople, cleanEventIds, syncEventToErp } from "./member-api.js";
 import { markRankingDirty } from "./ranking.js";
-import { resolveMatches } from "./bracket-api.js";
+import { resolveMatches, bracketMemberMap } from "./bracket-api.js";
 
 
 var MAX_NAME_LENGTH = 50;
@@ -635,7 +635,7 @@ async function missingSettle(env, id, placements, wins, checkedCount) {
 
   var missing = [];
 
-  if (placements.some(function (p) { return !p.entry_id; })) {
+  if (placements.some(function (p) { return !p.entry_id && !p.unconfirmed; })) {
     missing.push("有名次還沒選得獎者");
   }
 
@@ -676,13 +676,16 @@ async function listEvents(env) {
     "(SELECT COUNT(*) FROM checkin_entries c WHERE c.event_id = e.id AND c.checked_in = 1) AS checked, " +
     "(SELECT COUNT(*) FROM checkin_entries c WHERE c.event_id = e.id AND c.player_id IS NOT NULL) AS linked, " +
     /* 資料未齊：名次沒選人或沒填獎品、有設獎品卻沒填上位者、中獎者沒填獎品、抽獎獎項還沒抽完 */
-    "(CASE WHEN EXISTS (SELECT 1 FROM checkin_results r WHERE r.event_id = e.id AND (r.entry_id IS NULL OR COALESCE(r.prize, '') = '')) " +
+    "(CASE WHEN EXISTS (SELECT 1 FROM checkin_results r WHERE r.event_id = e.id AND ((r.entry_id IS NULL AND COALESCE(r.unconfirmed, 0) = 0) OR COALESCE(r.prize, '') = '')) " +
     " OR (EXISTS (SELECT 1 FROM checkin_event_prizes p WHERE p.event_id = e.id) AND NOT EXISTS (SELECT 1 FROM checkin_results r WHERE r.event_id = e.id)) " +
     " OR EXISTS (SELECT 1 FROM checkin_lottery_wins w WHERE w.event_id = e.id AND COALESCE(w.prize, '') = '') " +
     " OR EXISTS (SELECT 1 FROM checkin_lottery_tiers t WHERE t.event_id = e.id " +
     "   AND COALESCE(t.min_players, 0) <= (SELECT COUNT(*) FROM checkin_entries c WHERE c.event_id = e.id AND c.checked_in = 1) " +
     "   AND t.qty > (SELECT COUNT(*) FROM checkin_lottery_wins w WHERE w.tier_id = t.id)) " +
-    " THEN 1 ELSE 0 END) AS incomplete " +
+    " THEN 1 ELSE 0 END) AS incomplete, " +
+    /* 上位紀錄缺漏：有名次沒選選手、勾了「待確認」 */
+    "(CASE WHEN EXISTS (SELECT 1 FROM checkin_results r WHERE r.event_id = e.id AND r.entry_id IS NULL AND COALESCE(r.unconfirmed, 0) = 1) " +
+    " THEN 1 ELSE 0 END) AS missing_placement " +
     "FROM checkin_events e " +
     "WHERE e.event_date >= date(?, '-60 days') OR e.archived_at IS NULL OR e.settle_note LIKE 'legacy-tournament:%' " +
     "ORDER BY e.event_date ASC, COALESCE(e.start_time, '') ASC, e.id ASC"
@@ -690,8 +693,28 @@ async function listEvents(env) {
   .bind(today)
   .all();
 
+  /* 已封存場次的獎品數量：賽後紀錄上位者拿到的獎品（「扭蛋 × 2」算 2 份），抽獎不算 */
+  var prizeResult = await env.DB.prepare(
+    "SELECT r.event_id, r.prize FROM checkin_results r JOIN checkin_events e ON e.id = r.event_id " +
+    "WHERE e.archived_at IS NOT NULL AND COALESCE(r.prize, '') != '' " +
+    "AND (e.event_date >= date(?, '-60 days') OR e.settle_note LIKE 'legacy-tournament:%')"
+  )
+  .bind(today)
+  .all();
+
+  var prizeCount = {};
+
+  (prizeResult.results || []).forEach(function (r) {
+    var match = String(r.prize).match(/[×xX*]\s*(\d+)\s*$/);
+    var qty = match ? Number(match[1]) || 1 : 1;
+    prizeCount[r.event_id] = (prizeCount[r.event_id] || 0) + qty;
+  });
+
   var rows = (result.results || []).map(function (row) {
     row.group = eventGroup(row, today);
+    if (row.archived_at) {
+      row.prize_count = prizeCount[row.id] || 0;
+    }
     return row;
   });
 
@@ -984,7 +1007,7 @@ async function settleData(env, event) {
       "WHERE event_id = ? AND checked_in = 1 ORDER BY checkin_number ASC, id ASC"
     ).bind(event.id),
     env.DB.prepare(
-      "SELECT r.id, r.rank_label, r.entry_id, r.prize, r.configs, c.nickname, c.checkin_number FROM checkin_results r " +
+      "SELECT r.id, r.rank_label, r.entry_id, r.prize, r.configs, COALESCE(r.unconfirmed, 0) AS unconfirmed, c.nickname, c.checkin_number FROM checkin_results r " +
       "LEFT JOIN checkin_entries c ON c.id = r.entry_id WHERE r.event_id = ? ORDER BY r.sort, r.id"
     ).bind(event.id),
     env.DB.prepare(
@@ -1150,7 +1173,9 @@ async function saveSettle(request, env, staff, id, archive) {
       rank_label: label,
       entry_id: entryId,
       prize: cleanText(item && item.prize).slice(0, 100) || null,
-      configs: configs.length ? JSON.stringify(configs) : null
+      configs: configs.length ? JSON.stringify(configs) : null,
+      /* 待確認：還不確定是誰拿到這個名次，沒選選手也能儲存、封存 */
+      unconfirmed: item && item.unconfirmed ? 1 : 0
     };
   });
 
@@ -1183,8 +1208,8 @@ async function saveSettle(request, env, staff, id, archive) {
   placements.forEach(function (item, index) {
     statements.push(
       env.DB.prepare(
-        "INSERT INTO checkin_results (event_id, sort, rank_label, entry_id, prize, configs) VALUES (?, ?, ?, ?, ?, ?)"
-      ).bind(id, index, item.rank_label, item.entry_id, item.prize, item.configs)
+        "INSERT INTO checkin_results (event_id, sort, rank_label, entry_id, prize, configs, unconfirmed) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      ).bind(id, index, item.rank_label, item.entry_id, item.prize, item.configs, item.unconfirmed)
     );
   });
 
@@ -1340,13 +1365,15 @@ async function unarchive(env, staff, id) {
     env.DB.prepare(
       "UPDATE checkin_entries SET player_id = NULL WHERE event_id = ? AND player_id IN " +
       "(SELECT p.id FROM players p WHERE p.created_by_event = ? AND p.user_id IS NULL " +
-      "AND NOT EXISTS (SELECT 1 FROM player_placements pp WHERE pp.player_id = p.id))"
+      "AND NOT EXISTS (SELECT 1 FROM player_placements pp WHERE pp.player_id = p.id) " +
+      "AND NOT EXISTS (SELECT 1 FROM point_ledger pl WHERE pl.player_id = p.id))"
     ).bind(id, id),
     env.DB.prepare(
       "DELETE FROM players WHERE created_by_event = ? AND user_id IS NULL " +
       "AND NOT EXISTS (SELECT 1 FROM player_placements pp WHERE pp.player_id = players.id) " +
       "AND NOT EXISTS (SELECT 1 FROM checkin_entries c WHERE c.player_id = players.id) " +
-      "AND NOT EXISTS (SELECT 1 FROM player_claims pc WHERE pc.player_id = players.id)"
+      "AND NOT EXISTS (SELECT 1 FROM player_claims pc WHERE pc.player_id = players.id) " +
+      "AND NOT EXISTS (SELECT 1 FROM point_ledger pl WHERE pl.player_id = players.id)"
     ).bind(id)
   ]);
 
@@ -2216,17 +2243,25 @@ async function linkBracket(request, env, staff, eventId) {
      2. 名字一樣
      （都忽略空白、全形半形、大小寫） */
   var entries = (await env.DB.prepare(
-    "SELECT id, nickname FROM checkin_entries WHERE event_id = ? AND checked_in = 1"
+    "SELECT c.id, c.nickname, COALESCE(c.user_id, p.user_id) AS user_id FROM checkin_entries c " +
+    "LEFT JOIN players p ON p.id = c.player_id WHERE c.event_id = ? AND c.checked_in = 1"
   ).bind(eventId).all()).results || [];
 
   var byName = {};
+  var byUser = {};
 
   entries.forEach(function (e) {
     byName[normName(e.nickname)] = e.id;
+    if (e.user_id && !byUser[e.user_id]) {
+      byUser[e.user_id] = e.id;
+    }
   });
 
+  /* 0. 從報到名單貼上時帶的會員編號（最準） */
+  var tagged = await bracketMemberMap(env, bracket.id);
+
   function matchEntry(name) {
-    return byName[stripNumber(name)] || byName[normName(name)] || null;
+    return (tagged[name] && byUser[tagged[name]]) || byName[stripNumber(name)] || byName[normName(name)] || null;
   }
 
   /* 每一輪真的有上場的人（輪空晉級的不算那一輪），以及有沒有贏 */

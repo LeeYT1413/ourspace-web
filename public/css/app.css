@@ -3802,6 +3802,8 @@ button.bm-tag {
 
 .point-face {
   --card-color: #C23A2E;
+  aspect-ratio: 8 / 5; /* 卡面固定 8:5，格子多時才往下長 */
+  box-sizing: border-box;
   position: relative;
   margin: 0 14px 14px;
   padding: 18px;
@@ -3833,9 +3835,18 @@ button.bm-tag {
 
 .point-stamps {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 40px)); /* 10 格以內剛好放進 8:5 卡面 */
   gap: 8px;
-  margin: 16px 0 8px;
+  margin: 12px 0 6px;
+}
+
+/* 有背景圖：空格加一點底色，蓋在圖案上也看得到 */
+.point-face.has-image .point-stamp:not(.on) {
+  background: rgba(10, 18, 34, 0.35);
+}
+
+.point-face {
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
 }
 
 .point-stamp {
@@ -3940,4 +3951,34 @@ button.bm-tag {
   left: 16px;
   right: 16px;
   width: auto;
+}
+
+/* 卡面背景圖：60% 不透明度，不蓋深色 */
+.point-face.has-image,
+.pc-face.has-image {
+  position: relative;
+  background: #0B1424;
+  isolation: isolate;
+}
+
+.point-face.has-image::before,
+.pc-face.has-image::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--card-image) center / cover no-repeat;
+  border-radius: inherit;
+  opacity: 0.6;
+}
+
+/* 建立賽程：參賽者已對到會員 */
+.player-member {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  color: #14213A;
+  background: var(--gold);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
 }

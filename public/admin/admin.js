@@ -62,6 +62,7 @@
     SAME_TEAM: "A 隊和 B 隊不能是同一隊。",
     DUPLICATE: "已有相同的資料（代碼或帳號重複）。",
     IN_USE_OR_INVALID_REFERENCE: "這筆資料正被其他資料使用（例如賽程用到這個戰隊），無法刪除。",
+    PLAYER_HAS_RECORDS: "這筆選手資料還有紀錄，不能直接刪除。同一個人的話，請到「會員管理 → 選手資料整合」把它合併到另一筆（可以復原）。",
     CANNOT_DELETE_SELF: "不能刪除自己的帳號。",
     CANNOT_DEMOTE_SELF: "不能把自己改成裁判。",
     CANNOT_DISABLE_SELF: "不能停用自己的帳號。",
@@ -586,7 +587,12 @@
 
 
   function errorText(error) {
-    return ERROR_MESSAGES[error && error.code] || "發生錯誤（" + ((error && error.code) || "UNKNOWN") + "）";
+    var text = ERROR_MESSAGES[error && error.code] || "發生錯誤（" + ((error && error.code) || "UNKNOWN") + "）";
+    /* 刪不掉的原因（例如選手資料還有哪些紀錄） */
+    if (error && error.data && Array.isArray(error.data.reasons) && error.data.reasons.length) {
+      text += "目前還有：" + error.data.reasons.join("、") + "。";
+    }
+    return text;
   }
 
 
@@ -1154,6 +1160,164 @@
   }
 
 
+  /* =======================================================
+     戰隊資料檢查：所屬戰隊、主要戰隊、選手資料的戰隊三處沒對上的會員
+  ======================================================= */
+  function openTeamCheck() {
+
+    var overlay = el("div", "qp-overlay");
+    var sheet = el("div", "qp-sheet");
+    var body = el("div", "qp-preview");
+
+    function close() {
+      overlay.remove();
+    }
+
+    var head = el("div", "qp-head");
+    head.appendChild(el("h2", null, "戰隊資料檢查"));
+    head.appendChild(button("×", "btn btn-ghost btn-small", close));
+
+    sheet.appendChild(head);
+    sheet.appendChild(el("p", "field-help", "會員的戰隊記在三處，要一致：所屬戰隊（member_teams，正式隊員）、主要戰隊（users.primary_team_id）、選手資料的戰隊（players.team_id，報到頁「官網選手」和排行榜用）。下面列出沒對上的會員，以及哪一筆漏了哪一處。只檢查已連到會員的選手資料。"));
+    sheet.appendChild(body);
+    body.appendChild(el("p", "empty", "檢查中…"));
+
+    overlay.appendChild(sheet);
+    overlay.addEventListener("click", function (event) {
+      if (event.target === overlay) {
+        close();
+      }
+    });
+    document.body.appendChild(overlay);
+
+    api("GET", "/api/referee/members/team-check")
+      .then(function (res) {
+
+        var list = (res && res.data) || [];
+
+        clear(body);
+
+        if (!list.length) {
+          body.appendChild(el("p", "empty", "三處都對上了，沒有問題。"));
+          return;
+        }
+
+        body.appendChild(el("strong", null, "共 " + list.length + " 位會員有問題"));
+
+        list.forEach(function (m) {
+
+          var item = el("div", "qp-result tc-item");
+          var info = el("div", "mm-grow");
+
+          info.appendChild(el("strong", null, m.nickname + "（W" + m.user_id + "）"));
+          info.appendChild(el("small", "tc-line",
+            "所屬戰隊：" + (m.teams.length ? m.teams.join("、") : "（無）") +
+            "｜主要戰隊：" + (m.primary_team || "（無）") +
+            "｜選手資料：" + (m.players.length ? m.players.map(function (p) { return "#" + p.id + " " + p.name + "→" + (p.team || "無戰隊"); }).join("、") : "（無）")));
+
+          m.issues.forEach(function (text) {
+            info.appendChild(el("span", "tc-issue", "・" + text));
+          });
+
+          item.appendChild(info);
+          body.appendChild(item);
+        });
+      })
+      .catch(function (error) {
+        clear(body);
+        body.appendChild(el("p", "empty", errorText(error)));
+      });
+  }
+
+
+  /* =======================================================
+     一年沒認領的自動選手資料：先列出來看，確認後再清除
+  ======================================================= */
+  function openStaleGuests(done) {
+
+    var overlay = el("div", "qp-overlay");
+    var sheet = el("div", "qp-sheet");
+    var body = el("div", "qp-preview");
+    var removed = false;
+
+    function close() {
+      overlay.remove();
+      if (removed && done) {
+        done();
+      }
+    }
+
+    var head = el("div", "qp-head");
+    head.appendChild(el("h2", null, "一年沒認領的選手資料"));
+    head.appendChild(button("×", "btn btn-ghost btn-small", close));
+
+    sheet.appendChild(head);
+    sheet.appendChild(el("p", "field-help", "只列系統自動建立的非會員選手資料（封存上位者、批次發點時建立的），建立滿一年、沒有連到會員、也沒有待審核的認領申請。清除後，這些人的上位紀錄和點數會一起刪掉，報名紀錄保留。在選手頁手動建立的選手資料不會出現在這裡。"));
+    sheet.appendChild(body);
+    body.appendChild(el("p", "empty", "檢查中…"));
+
+    var actions = el("div", "qp-actions");
+    sheet.appendChild(actions);
+
+    overlay.appendChild(sheet);
+    overlay.addEventListener("click", function (event) {
+      if (event.target === overlay) {
+        close();
+      }
+    });
+    document.body.appendChild(overlay);
+
+    api("GET", "/api/referee/members/stale-guests")
+      .then(function (res) {
+
+        var list = (res && res.data) || [];
+
+        clear(body);
+
+        if (!list.length) {
+          body.appendChild(el("p", "empty", "沒有需要清除的選手資料。"));
+          return;
+        }
+
+        body.appendChild(el("strong", null, "共 " + list.length + " 筆"));
+
+        list.forEach(function (p) {
+          var line = el("div", "qp-result");
+          line.appendChild(el("span", null, p.name + "・" + String(p.created_at || "").slice(0, 10) + " 建立" +
+            (p.event_title ? "（" + p.event_title + "）" : "") +
+            "・上位 " + p.placements + " 筆・參賽 " + p.entries + " 場" + (Number(p.points) ? "・點數 " + p.points : "")));
+          body.appendChild(line);
+        });
+
+        var cleanBtn = button("清除這 " + list.length + " 筆", "btn btn-primary", function () {
+
+          if (!window.confirm("確定清除這 " + list.length + " 筆選手資料？\n上位紀錄和點數會一起刪掉，不能復原。")) {
+            return;
+          }
+
+          cleanBtn.disabled = true;
+
+          api("POST", "/api/referee/members/stale-guests/cleanup", {})
+            .then(function (result) {
+              removed = true;
+              toast("已清除 " + (result.removed || 0) + " 筆選手資料。", "success");
+              close();
+            })
+            .catch(function (error) {
+              cleanBtn.disabled = false;
+              toast(errorText(error), "error");
+            });
+        });
+
+        actions.appendChild(cleanBtn);
+      })
+      .catch(function (error) {
+        clear(body);
+        body.appendChild(el("p", "empty", errorText(error)));
+      });
+  }
+
+
   function renderResourceView(resourceId) {
 
     var config = RESOURCES[resourceId];
@@ -1171,6 +1335,10 @@
       titleRow.appendChild(button("快速登錄", "btn btn-gold btn-small", function () {
         openQuickPlacements(function () { renderResourceView(resourceId); });
       }));
+      titleRow.appendChild(button("檢查未認領", "btn btn-ghost btn-small", function () {
+        openStaleGuests(function () { renderResourceView(resourceId); });
+      }));
+      titleRow.appendChild(button("檢查戰隊", "btn btn-ghost btn-small", openTeamCheck));
     }
 
     head.appendChild(titleRow);

@@ -777,12 +777,80 @@ async function updateRecord(request, env, staff, resource, config, id) {
 }
 
 
+async function playerDeleteCheck(env, id) {
+
+  var info = await env.DB.prepare(
+    "SELECT " +
+    "(SELECT COUNT(*) FROM player_placements WHERE player_id = ?1) AS placements, " +
+    "(SELECT COUNT(*) FROM checkin_entries WHERE player_id = ?1) AS entries, " +
+    "(SELECT COUNT(*) FROM tournament_results WHERE player_id = ?1) AS tournaments, " +
+    "(SELECT COUNT(*) FROM league_matches WHERE player_a_id = ?1 OR player_b_id = ?1) AS matches, " +
+    "(SELECT user_id FROM players WHERE id = ?1) AS user_id"
+  ).bind(id).first();
+
+  var points = await env.DB.prepare("SELECT COUNT(*) AS n FROM point_ledger WHERE player_id = ?").bind(id).first()
+    .catch(function () { return { n: 0 }; });
+
+  var reasons = [];
+
+  if (info && Number(info.placements)) { reasons.push("上位紀錄 " + info.placements + " 筆"); }
+  if (info && Number(info.tournaments)) { reasons.push("舊賽事成績 " + info.tournaments + " 筆"); }
+  if (info && Number(info.matches)) { reasons.push("舊聯賽對戰 " + info.matches + " 筆"); }
+  if (points && Number(points.n)) { reasons.push("集點紀錄 " + points.n + " 筆"); }
+
+  if (info && Number(info.entries)) {
+    var events = await env.DB.prepare(
+      "SELECT e.event_date, e.title, e.archived_at FROM checkin_entries c INNER JOIN checkin_events e ON e.id = c.event_id " +
+      "WHERE c.player_id = ? ORDER BY e.event_date DESC LIMIT 3"
+    ).bind(id).all();
+    reasons.push("報名 " + info.entries + " 筆（" + (events.results || []).map(function (e) {
+      return String(e.event_date).replace(/-/g, "/") + " " + e.title + (e.archived_at ? "" : "・還沒封存");
+    }).join("、") + (Number(info.entries) > 3 ? "…" : "") + "）");
+  }
+
+  if (info && info.user_id) {
+    reasons.push("已連到會員");
+  }
+
+  /* 有認領申請（不論待審核、已核准、已退回）也不能刪 */
+  var claims = (await env.DB.prepare(
+    "SELECT c.status, u.nickname FROM player_claims c LEFT JOIN users u ON u.id = c.user_id WHERE c.player_id = ? ORDER BY c.id DESC LIMIT 5"
+  ).bind(id).all().catch(function () { return { results: [] }; })).results || [];
+
+  if (claims.length) {
+    var label = { pending: "待審核", approved: "已核准", rejected: "已退回" };
+    reasons.push("認領申請 " + claims.length + " 筆（" + claims.map(function (c) {
+      return (c.nickname || "會員") + "・" + (label[c.status] || c.status || "");
+    }).join("、") + "）");
+  }
+
+  if (reasons.length) {
+    return errorResponse("PLAYER_HAS_RECORDS", 409, { data: { reasons: reasons } });
+  }
+
+  /* 沒有真的紀錄：陀螺爭霸的排行榜暫存（player_ranking，會自動重算）、對戰表對應先清掉，才刪得掉 */
+  await env.DB.prepare("DELETE FROM player_ranking WHERE player_id = ?").bind(id).run();
+
+  await env.DB.prepare("DELETE FROM bracket_members WHERE player_id = ?").bind(id).run().catch(function () {});
+
+  return null;
+}
+
+
 async function deleteRecord(env, staff, resource, config, id) {
 
   var existing = await getRecord(env, config, id);
 
   if (!existing) {
     return errorResponse("NOT_FOUND", 404);
+  }
+
+  /* 選手資料：有紀錄或認領申請就不能刪（請用整合）；只剩排行榜暫存就一起清掉 */
+  if (resource === "players") {
+    var blocked = await playerDeleteCheck(env, id);
+    if (blocked) {
+      return blocked;
+    }
   }
 
   try {
